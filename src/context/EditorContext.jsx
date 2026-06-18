@@ -3,6 +3,7 @@ import React, { createContext, useState, useEffect, useRef, useCallback } from '
 export const EditorContext = createContext();
 
 const DEFAULT_TRACKS = [
+  { id: 'sub1', name: 'Subtitles', type: 'subtitle', muted: false, solo: false, locked: false },
   { id: 'v2', name: 'Video 2 (Overlay)', type: 'video', muted: false, solo: false, locked: false },
   { id: 'v1', name: 'Video 1 (Primary)', type: 'video', muted: false, solo: false, locked: false },
   { id: 'a1', name: 'Audio 1', type: 'audio', muted: false, solo: false, locked: false, volume: 1.0 },
@@ -15,6 +16,14 @@ export const EditorProvider = ({ children }) => {
   const [tracks, setTracks] = useState(DEFAULT_TRACKS);
   const [clips, setClips] = useState([]);
   const [mediaLibrary, setMediaLibrary] = useState([]);
+
+  // Source Monitor State (Dual Viewers)
+  const [sourceAsset, setSourceAsset] = useState(null);
+  const [sourcePlayhead, setSourcePlayhead] = useState(0);
+  const [sourceIn, setSourceIn] = useState(0);
+  const [sourceOut, setSourceOut] = useState(0);
+  const [sourcePlaying, setSourcePlaying] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1.0); // Variable playback speed (1x, 2x, 4x, etc.)
   
   // Selection and Navigation
   const [selectedClipId, setSelectedClipId] = useState(null);
@@ -616,6 +625,436 @@ export const EditorProvider = ({ children }) => {
     }));
   }, [saveHistory]);
 
+  // Three-point Editing: Insert Clip with Ripple
+  const insertClip = useCallback(() => {
+    if (!sourceAsset) return;
+    saveHistory();
+
+    // Determine target track
+    let targetTrackId = selectedTrackId;
+    let targetTrack = tracks.find(t => t.id === targetTrackId);
+    const isCompatible = targetTrack && (
+      (sourceAsset.type === 'audio' && targetTrack.type === 'audio') ||
+      (sourceAsset.type !== 'audio' && targetTrack.type !== 'audio')
+    );
+
+    if (!isCompatible) {
+      const firstComp = tracks.find(t => 
+        sourceAsset.type === 'audio' ? t.type === 'audio' : t.type !== 'audio'
+      );
+      if (!firstComp) return;
+      targetTrackId = firstComp.id;
+    }
+
+    const clipDuration = sourceOut - sourceIn;
+    if (clipDuration <= 0) return;
+
+    setClips(prev => {
+      let updatedClips = [...prev];
+
+      // A. Check for spanning clips to split
+      const spanningClip = updatedClips.find(c => 
+        c.trackId === targetTrackId && 
+        playhead > c.timelinePos && 
+        playhead < c.timelinePos + c.duration
+      );
+
+      if (spanningClip) {
+        const relativeSplit = playhead - spanningClip.timelinePos;
+        const leftClip = {
+          ...spanningClip,
+          duration: relativeSplit,
+          srcOut: spanningClip.srcIn + relativeSplit,
+        };
+        const rightClip = {
+          ...JSON.parse(JSON.stringify(spanningClip)),
+          id: `c_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+          timelinePos: playhead,
+          duration: spanningClip.duration - relativeSplit,
+          srcIn: spanningClip.srcIn + relativeSplit,
+        };
+
+        updatedClips = updatedClips.filter(c => c.id !== spanningClip.id);
+        updatedClips.push(leftClip, rightClip);
+      }
+
+      // B. Ripple/Shift all subsequent clips forward on target track
+      updatedClips = updatedClips.map(c => {
+        if (c.trackId === targetTrackId && c.timelinePos >= playhead - 0.001) {
+          return { ...c, timelinePos: c.timelinePos + clipDuration };
+        }
+        return c;
+      });
+
+      // C. Append the new clip
+      const newClip = {
+        id: `c_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        trackId: targetTrackId,
+        name: sourceAsset.name + " (Subclip)",
+        mediaType: sourceAsset.type,
+        mediaId: sourceAsset.id,
+        sourceUrl: sourceAsset.url,
+        srcIn: sourceIn,
+        srcOut: sourceOut,
+        timelinePos: playhead,
+        duration: clipDuration,
+        speed: 1.0,
+        volume: 1.0,
+        opacity: 1.0,
+        crop: { left: 0, top: 0, right: 0, bottom: 0 },
+        transform: { x: 0, y: 0, scale: 1.0, rotation: 0 },
+        effects: [],
+        keyframes: {
+          opacity: [], volume: [], scale: [], rotation: [],
+          brightness: [], contrast: [], saturation: [], blur: []
+        }
+      };
+      updatedClips.push(newClip);
+      return updatedClips;
+    });
+
+    setPlayhead(prev => prev + clipDuration);
+  }, [sourceAsset, sourceIn, sourceOut, playhead, selectedTrackId, tracks, saveHistory]);
+
+  // Three-point Editing: Overwrite Clip
+  const overwriteClip = useCallback(() => {
+    if (!sourceAsset) return;
+    saveHistory();
+
+    let targetTrackId = selectedTrackId;
+    let targetTrack = tracks.find(t => t.id === targetTrackId);
+    const isCompatible = targetTrack && (
+      (sourceAsset.type === 'audio' && targetTrack.type === 'audio') ||
+      (sourceAsset.type !== 'audio' && targetTrack.type !== 'audio')
+    );
+
+    if (!isCompatible) {
+      const firstComp = tracks.find(t => 
+        sourceAsset.type === 'audio' ? t.type === 'audio' : t.type !== 'audio'
+      );
+      if (!firstComp) return;
+      targetTrackId = firstComp.id;
+    }
+
+    const clipDuration = sourceOut - sourceIn;
+    if (clipDuration <= 0) return;
+    const endPos = playhead + clipDuration;
+
+    setClips(prev => {
+      let updatedClips = [];
+
+      prev.forEach(c => {
+        if (c.trackId !== targetTrackId) {
+          updatedClips.push(c);
+          return;
+        }
+
+        const cStart = c.timelinePos;
+        const cEnd = c.timelinePos + c.duration;
+
+        // Case 1: Engulfed -> delete
+        if (cStart >= playhead && cEnd <= endPos) return;
+
+        // Case 2: Spans across overwritten area -> split
+        if (cStart < playhead && cEnd > endPos) {
+          const leftDuration = playhead - cStart;
+          const leftClip = {
+            ...c,
+            duration: leftDuration,
+            srcOut: c.srcIn + leftDuration
+          };
+          const rightShift = endPos - cStart;
+          const rightClip = {
+            ...JSON.parse(JSON.stringify(c)),
+            id: `c_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+            timelinePos: endPos,
+            duration: c.duration - rightShift,
+            srcIn: c.srcIn + rightShift
+          };
+          updatedClips.push(leftClip, rightClip);
+          return;
+        }
+
+        // Case 3: Left overlap -> truncate
+        if (cStart < playhead && cEnd > playhead && cEnd <= endPos) {
+          const newDur = playhead - cStart;
+          updatedClips.push({
+            ...c,
+            duration: newDur,
+            srcOut: c.srcIn + newDur
+          });
+          return;
+        }
+
+        // Case 4: Right overlap -> shift and trim start
+        if (cStart >= playhead && cStart < endPos && cEnd > endPos) {
+          const rightCut = endPos - cStart;
+          updatedClips.push({
+            ...c,
+            timelinePos: endPos,
+            duration: c.duration - rightCut,
+            srcIn: c.srcIn + rightCut
+          });
+          return;
+        }
+
+        updatedClips.push(c);
+      });
+
+      // Append overwritten clip
+      const newClip = {
+        id: `c_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        trackId: targetTrackId,
+        name: sourceAsset.name + " (Overwrite)",
+        mediaType: sourceAsset.type,
+        mediaId: sourceAsset.id,
+        sourceUrl: sourceAsset.url,
+        srcIn: sourceIn,
+        srcOut: sourceOut,
+        timelinePos: playhead,
+        duration: clipDuration,
+        speed: 1.0,
+        volume: 1.0,
+        opacity: 1.0,
+        crop: { left: 0, top: 0, right: 0, bottom: 0 },
+        transform: { x: 0, y: 0, scale: 1.0, rotation: 0 },
+        effects: [],
+        keyframes: {
+          opacity: [], volume: [], scale: [], rotation: [],
+          brightness: [], contrast: [], saturation: [], blur: []
+        }
+      };
+      updatedClips.push(newClip);
+      return updatedClips;
+    });
+
+    setPlayhead(endPos);
+  }, [sourceAsset, sourceIn, sourceOut, playhead, selectedTrackId, tracks, saveHistory]);
+
+  // Professional Smart Trimming: Ripple Trim
+  const rippleTrim = useCallback((clipId, edge, newTime) => {
+    saveHistory();
+    setClips(prev => {
+      const targetClip = prev.find(c => c.id === clipId);
+      if (!targetClip) return prev;
+
+      const asset = mediaLibrary.find(m => m.id === targetClip.mediaId) || { duration: 9999 };
+      const maxDuration = asset.duration || 9999;
+      const trackId = targetClip.trackId;
+
+      let delta = 0;
+
+      return prev.map(c => {
+        if (c.trackId !== trackId) return c;
+
+        if (c.id === clipId) {
+          if (edge === 'left') {
+            const proposedTimelinePos = Math.max(0, newTime);
+            delta = proposedTimelinePos - c.timelinePos;
+            
+            const newSrcIn = Math.max(0, c.srcIn + delta);
+            const actualDelta = newSrcIn - c.srcIn;
+            const finalTimelinePos = c.timelinePos + actualDelta;
+            const finalDuration = Math.max(0.1, c.duration - actualDelta);
+            delta = actualDelta;
+
+            return {
+              ...c,
+              timelinePos: finalTimelinePos,
+              srcIn: newSrcIn,
+              duration: finalDuration,
+              srcOut: newSrcIn + finalDuration,
+            };
+          } else {
+            const newDuration = Math.max(0.1, Math.min(maxDuration - c.srcIn, newTime - c.timelinePos));
+            delta = newDuration - c.duration;
+
+            return {
+              ...c,
+              duration: newDuration,
+              srcOut: c.srcIn + newDuration,
+            };
+          }
+        } else if (c.timelinePos > targetClip.timelinePos) {
+          return {
+            ...c,
+            timelinePos: Math.max(0, c.timelinePos + delta)
+          };
+        }
+        return c;
+      });
+    });
+  }, [mediaLibrary, saveHistory]);
+
+  // Professional Smart Trimming: Roll Edit
+  const rollEdit = useCallback((clipAId, clipBId, newBoundaryTime) => {
+    saveHistory();
+    setClips(prev => {
+      const clipA = prev.find(c => c.id === clipAId);
+      const clipB = prev.find(c => c.id === clipBId);
+      if (!clipA || !clipB) return prev;
+
+      const assetA = mediaLibrary.find(m => m.id === clipA.mediaId) || { duration: 9999 };
+
+      const newDurationA = Math.max(0.1, Math.min(assetA.duration - clipA.srcIn, newBoundaryTime - clipA.timelinePos));
+      const actualBoundary = clipA.timelinePos + newDurationA;
+
+      const deltaB = actualBoundary - clipB.timelinePos;
+      const newSrcInB = Math.max(0, clipB.srcIn + deltaB);
+      const actualDeltaB = newSrcInB - clipB.srcIn;
+      const finalTimelinePosB = clipB.timelinePos + actualDeltaB;
+      const finalDurationB = Math.max(0.1, clipB.duration - actualDeltaB);
+
+      return prev.map(c => {
+        if (c.id === clipAId) {
+          return {
+            ...c,
+            duration: newDurationA,
+            srcOut: c.srcIn + newDurationA,
+          };
+        }
+        if (c.id === clipBId) {
+          return {
+            ...c,
+            timelinePos: finalTimelinePosB,
+            srcIn: newSrcInB,
+            duration: finalDurationB,
+            srcOut: newSrcInB + finalDurationB,
+          };
+        }
+        return c;
+      });
+    });
+  }, [mediaLibrary, saveHistory]);
+
+  // Professional Smart Trimming: Slip Tool
+  const slipClip = useCallback((clipId, deltaSec) => {
+    saveHistory();
+    setClips(prev => prev.map(c => {
+      if (c.id !== clipId) return c;
+      const asset = mediaLibrary.find(m => m.id === c.mediaId) || { duration: 9999 };
+      const maxDuration = asset.duration || 9999;
+      
+      let newSrcIn = c.srcIn + deltaSec;
+      let newSrcOut = c.srcOut + deltaSec;
+
+      if (newSrcIn < 0) {
+        const shift = -newSrcIn;
+        newSrcIn = 0;
+        newSrcOut += shift;
+      }
+      if (newSrcOut > maxDuration) {
+        const shift = newSrcOut - maxDuration;
+        newSrcOut = maxDuration;
+        newSrcIn = Math.max(0, newSrcIn - shift);
+      }
+
+      return {
+        ...c,
+        srcIn: newSrcIn,
+        srcOut: newSrcOut,
+        duration: newSrcOut - newSrcIn
+      };
+    }));
+  }, [mediaLibrary, saveHistory]);
+
+  // Professional Smart Trimming: Slide Tool
+  const slideClip = useCallback((clipId, deltaSec) => {
+    saveHistory();
+    setClips(prev => {
+      const target = prev.find(c => c.id === clipId);
+      if (!target) return prev;
+
+      const newPos = Math.max(0, target.timelinePos + deltaSec);
+      const actualDelta = newPos - target.timelinePos;
+      const trackId = target.trackId;
+
+      const preceding = prev.find(c => c.trackId === trackId && Math.abs((c.timelinePos + c.duration) - target.timelinePos) < 0.1);
+      const succeeding = prev.find(c => c.trackId === trackId && Math.abs(c.timelinePos - (target.timelinePos + target.duration)) < 0.1);
+
+      return prev.map(c => {
+        if (c.id === clipId) {
+          return { ...c, timelinePos: newPos };
+        }
+        if (preceding && c.id === preceding.id) {
+          const newDuration = Math.max(0.1, preceding.duration + actualDelta);
+          return {
+            ...c,
+            duration: newDuration,
+            srcOut: c.srcIn + newDuration
+          };
+        }
+        if (succeeding && c.id === succeeding.id) {
+          const newStart = Math.max(0, succeeding.timelinePos + actualDelta);
+          const newDuration = Math.max(0.1, succeeding.duration - actualDelta);
+          return {
+            ...c,
+            timelinePos: newStart,
+            duration: newDuration,
+            srcIn: Math.max(0, succeeding.srcIn + actualDelta),
+            srcOut: Math.max(0.1, succeeding.srcOut)
+          };
+        }
+        return c;
+      });
+    });
+  }, [saveHistory]);
+
+  // Add Subtitle Clip
+  const addSubtitleClip = useCallback((timelinePos = 0) => {
+    const subTrack = tracks.find(t => t.type === 'subtitle') || tracks[0];
+    const clipDuration = 3.0; // default 3s
+    
+    let adjustedPos = timelinePos;
+    let overlapping = true;
+    let attempts = 0;
+    while (overlapping && attempts < 100) {
+      const hasOverlap = clips.some(c => 
+        c.trackId === subTrack.id && 
+        ((adjustedPos >= c.timelinePos && adjustedPos < c.timelinePos + c.duration) ||
+         (adjustedPos + clipDuration > c.timelinePos && adjustedPos + clipDuration <= c.timelinePos + c.duration))
+      );
+      if (hasOverlap) {
+        adjustedPos += 0.5;
+        attempts++;
+      } else {
+        overlapping = false;
+      }
+    }
+
+    const newClip = {
+      id: `c_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      trackId: subTrack.id,
+      name: 'New Subtitle Caption',
+      mediaType: 'subtitle',
+      mediaId: 'subtitle_asset',
+      sourceUrl: '',
+      srcIn: 0,
+      srcOut: clipDuration,
+      timelinePos: adjustedPos,
+      duration: clipDuration,
+      speed: 1.0,
+      volume: 1.0,
+      opacity: 1.0,
+      crop: { left: 0, top: 0, right: 0, bottom: 0 },
+      transform: { x: 0, y: 0, scale: 1.0, rotation: 0 },
+      effects: [],
+      textColor: '#ffffff',
+      fontSize: 28,
+      fontFamily: 'Inter',
+      textBgOpacity: 0.65, // black box background
+      keyframes: {
+        opacity: [], volume: [], scale: [], rotation: [],
+        brightness: [], contrast: [], saturation: [], blur: []
+      }
+    };
+
+    saveHistory(tracks, [...clips, newClip]);
+    setClips(prev => [...prev, newClip]);
+    setSelectedClipId(newClip.id);
+    setSelectedTrackId(subTrack.id);
+  }, [clips, tracks, saveHistory]);
+
   // Interpolation helper to retrieve current animated property values
   const getInterpolatedValue = useCallback((clip, property, timelineTime, defaultValue) => {
     const curves = clip.keyframes;
@@ -677,8 +1116,36 @@ export const EditorProvider = ({ children }) => {
       if (e.code === 'Space') {
         e.preventDefault();
         setPlaying(prev => !prev);
+        setPlaybackSpeed(1.0);
       }
       
+      // JKL Playback Controls
+      if (e.code === 'KeyL') {
+        e.preventDefault();
+        setPlaying(true);
+        setPlaybackSpeed(prev => {
+          if (prev <= 0) return 1.0;
+          if (prev === 1.0) return 2.0;
+          if (prev === 2.0) return 4.0;
+          return 4.0;
+        });
+      }
+      if (e.code === 'KeyK') {
+        e.preventDefault();
+        setPlaying(false);
+        setPlaybackSpeed(1.0);
+      }
+      if (e.code === 'KeyJ') {
+        e.preventDefault();
+        setPlaying(true);
+        setPlaybackSpeed(prev => {
+          if (prev >= 0) return -1.0;
+          if (prev === -1.0) return -2.0;
+          if (prev === -2.0) return -4.0;
+          return -4.0;
+        });
+      }
+
       // ArrowLeft / ArrowRight -> Step 1 frame
       if (e.code === 'ArrowLeft') {
         e.preventDefault();
@@ -707,6 +1174,26 @@ export const EditorProvider = ({ children }) => {
           e.preventDefault();
           deleteClip(selectedClipId);
         }
+      }
+
+      // BracketLeft / BracketRight -> Set Source In/Out
+      if (e.code === 'BracketLeft') {
+        e.preventDefault();
+        setSourceIn(sourcePlayhead);
+      }
+      if (e.code === 'BracketRight') {
+        e.preventDefault();
+        setSourceOut(Math.max(sourcePlayhead, sourceIn + 0.1));
+      }
+
+      // F9 / F10 -> Insert / Overwrite
+      if (e.code === 'F9') {
+        e.preventDefault();
+        insertClip();
+      }
+      if (e.code === 'F10') {
+        e.preventDefault();
+        overwriteClip();
       }
 
       // I / O -> Set Loop bounds
@@ -739,18 +1226,21 @@ export const EditorProvider = ({ children }) => {
         }
       }
 
-      // B -> Blade tool, V -> Select tool
+      // B -> Blade tool, V -> Select tool, T -> Trim
       if (e.code === 'KeyB') {
         setTool('blade');
       }
       if (e.code === 'KeyV') {
         setTool('select');
       }
+      if (e.code === 'KeyT') {
+        setTool('trim');
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [playhead, selectedClipId, loopStart, loopEnd, fps, timelineDuration, undo, redo, deleteClip, duplicateClip]);
+  }, [playhead, selectedClipId, loopStart, loopEnd, fps, timelineDuration, undo, redo, deleteClip, duplicateClip, sourcePlayhead, sourceIn, sourceAsset, insertClip, overwriteClip]);
 
   return (
     <EditorContext.Provider value={{
@@ -769,7 +1259,20 @@ export const EditorProvider = ({ children }) => {
       undoStack, redoStack, undo, redo, saveHistory,
       timelineDuration,
       getInterpolatedValue,
-      toggleKeyframe, updateKeyframeValue
+      toggleKeyframe, updateKeyframeValue,
+      
+      // Source Monitor / JKL State
+      sourceAsset, setSourceAsset,
+      sourcePlayhead, setSourcePlayhead,
+      sourceIn, setSourceIn,
+      sourceOut, setSourceOut,
+      sourcePlaying, setSourcePlaying,
+      playbackSpeed, setPlaybackSpeed,
+      
+      // Editing operations
+      insertClip, overwriteClip,
+      rippleTrim, rollEdit, slipClip, slideClip,
+      addSubtitleClip
     }}>
       {children}
     </EditorContext.Provider>

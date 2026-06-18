@@ -13,7 +13,8 @@ export default function TimelinePanel() {
     snapping, setSnapping,
     tool, setTool,
     timelineDuration,
-    looping, loopStart, loopEnd
+    looping, loopStart, loopEnd,
+    rippleTrim, rollEdit, slipClip, slideClip, addSubtitleClip
   } = useContext(EditorContext);
 
   const scrollContainerRef = useRef(null);
@@ -105,6 +106,81 @@ export default function TimelinePanel() {
     setSelectedClipId(clip.id);
     setSelectedTrackId(clip.trackId);
 
+    // Context-sensitive Smart Trim tool logic
+    if (tool === 'trim') {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const pct = clickX / rect.width;
+      
+      const isLeftEdge = pct < 0.15;
+      const isRightEdge = pct > 0.85;
+
+      if (isLeftEdge) {
+        // Roll edit check (preceding clip adjacent)
+        const preceding = clips.find(c => c.trackId === clip.trackId && Math.abs((c.timelinePos + c.duration) - clip.timelinePos) < 0.15);
+        if (preceding) {
+          setDragState({
+            type: 'roll',
+            clipIdA: preceding.id,
+            clipIdB: clip.id,
+            startX: e.clientX,
+            startPos: clip.timelinePos
+          });
+        } else {
+          // Ripple Trim Left
+          setDragState({
+            type: 'ripple-trim-left',
+            clipId: clip.id,
+            startX: e.clientX,
+            startPos: clip.timelinePos,
+            startDuration: clip.duration,
+            startSrcIn: clip.srcIn
+          });
+        }
+      } else if (isRightEdge) {
+        // Roll edit check (succeeding clip adjacent)
+        const succeeding = clips.find(c => c.trackId === clip.trackId && Math.abs(c.timelinePos - (clip.timelinePos + clip.duration)) < 0.15);
+        if (succeeding) {
+          setDragState({
+            type: 'roll',
+            clipIdA: clip.id,
+            clipIdB: succeeding.id,
+            startX: e.clientX,
+            startPos: clip.timelinePos + clip.duration
+          });
+        } else {
+          // Ripple Trim Right
+          setDragState({
+            type: 'ripple-trim-right',
+            clipId: clip.id,
+            startX: e.clientX,
+            startPos: clip.timelinePos,
+            startDuration: clip.duration,
+            startSrcIn: clip.srcIn
+          });
+        }
+      } else {
+        // Drag center body: Alt=Slide, default=Slip
+        if (e.altKey) {
+          setDragState({
+            type: 'slide',
+            clipId: clip.id,
+            startX: e.clientX,
+            startPos: clip.timelinePos
+          });
+        } else {
+          setDragState({
+            type: 'slip',
+            clipId: clip.id,
+            startX: e.clientX,
+            startPos: clip.timelinePos,
+            startSrcIn: clip.srcIn
+          });
+        }
+      }
+      return;
+    }
+
     setDragState({
       type: actionType, // 'move' | 'trim-left' | 'trim-right'
       clipId: clip.id,
@@ -135,7 +211,6 @@ export default function TimelinePanel() {
           const rect = el.getBoundingClientRect();
           if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
             const trackId = el.getAttribute('data-track-id');
-            // Ensure compatibility (video clips can only go to video/text tracks, audio to audio tracks)
             const activeClip = clips.find(c => c.id === dragState.clipId);
             const targetTrack = tracks.find(t => t.id === trackId);
             if (activeClip && targetTrack) {
@@ -155,6 +230,19 @@ export default function TimelinePanel() {
       } else if (dragState.type === 'trim-right') {
         const newTime = dragState.startPos + dragState.startDuration + deltaSec;
         trimClip(dragState.clipId, 'right', newTime);
+      } else if (dragState.type === 'ripple-trim-left') {
+        const newTime = dragState.startPos + deltaSec;
+        rippleTrim(dragState.clipId, 'left', newTime);
+      } else if (dragState.type === 'ripple-trim-right') {
+        const newTime = dragState.startPos + dragState.startDuration + deltaSec;
+        rippleTrim(dragState.clipId, 'right', newTime);
+      } else if (dragState.type === 'roll') {
+        const newTime = dragState.startPos + deltaSec;
+        rollEdit(dragState.clipIdA, dragState.clipIdB, newTime);
+      } else if (dragState.type === 'slip') {
+        slipClip(dragState.clipId, deltaSec);
+      } else if (dragState.type === 'slide') {
+        slideClip(dragState.clipId, deltaSec);
       }
     };
 
@@ -169,7 +257,7 @@ export default function TimelinePanel() {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [dragState, clips, tracks, zoom, moveClip, trimClip]);
+  }, [dragState, clips, tracks, zoom, moveClip, trimClip, rippleTrim, rollEdit, slipClip, slideClip]);
 
   // Drop from Media Library to Timeline Track
   const handleTimelineDrop = (e, trackId) => {
@@ -218,6 +306,13 @@ export default function TimelinePanel() {
             ✂️
           </button>
           <button 
+            className={`btn-icon ${tool === 'trim' ? 'active' : ''}`}
+            onClick={() => setTool('trim')}
+            title="Smart Trim Tool (T) - Drag edge for Ripple Trim, boundary for Roll Edit, body to Slip (Alt: Slide)"
+          >
+            📐
+          </button>
+          <button 
             className={`btn-icon ${snapping ? 'active snapping-active' : ''}`}
             onClick={() => setSnapping(!snapping)}
             title="Toggle Magnetic Snap (S)"
@@ -258,8 +353,17 @@ export default function TimelinePanel() {
           </button>
 
           <button 
+            className="btn btn-secondary" 
+            style={{ padding: '4px 10px', fontSize: '0.75rem', borderColor: 'var(--primary)', color: '#fed7aa', background: 'rgba(249, 115, 22, 0.1)', marginLeft: '6px' }} 
+            onClick={() => addSubtitleClip(playhead)}
+            title="Add Subtitle Caption at Playhead"
+          >
+            💬 Add Subtitle
+          </button>
+
+          <button 
             className="btn-danger btn" 
-            style={{ padding: '4px 10px', fontSize: '0.75rem' }} 
+            style={{ padding: '4px 10px', fontSize: '0.75rem', marginLeft: '6px' }} 
             onClick={handleClearTimeline}
           >
             Clear Timeline
@@ -384,6 +488,27 @@ export default function TimelinePanel() {
                         className={`timeline-clip ${clip.mediaType} ${isSelected ? 'selected' : ''}`}
                         style={{ left: `${left}px`, width: `${width}px` }}
                         onMouseDown={(e) => handleClipMouseDown(e, clip, 'move')}
+                        onMouseMove={(e) => {
+                          if (tool !== 'trim') return;
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const clickX = e.clientX - rect.left;
+                          const pct = clickX / rect.width;
+                          const isLeftEdge = pct < 0.15;
+                          const isRightEdge = pct > 0.85;
+                          
+                          if (isLeftEdge) {
+                            const preceding = clips.find(c => c.trackId === clip.trackId && Math.abs((c.timelinePos + c.duration) - clip.timelinePos) < 0.15);
+                            e.currentTarget.style.cursor = preceding ? 'col-resize' : 'w-resize';
+                          } else if (isRightEdge) {
+                            const succeeding = clips.find(c => c.trackId === clip.trackId && Math.abs(clip.timelinePos - (clip.timelinePos + clip.duration)) < 0.15);
+                            e.currentTarget.style.cursor = succeeding ? 'col-resize' : 'e-resize';
+                          } else {
+                            e.currentTarget.style.cursor = e.altKey ? 'alias' : 'grab';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.cursor = '';
+                        }}
                       >
                         {/* Trim handles */}
                         {!track.locked && tool === 'select' && (

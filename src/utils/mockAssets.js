@@ -521,6 +521,18 @@ export const getThumbnailDataUri = (type) => {
     ctx.beginPath();
     ctx.arc(80,55,20,Math.PI,0);
     ctx.fill();
+  } else if (type === 'adjustment') {
+    const gradient = ctx.createLinearGradient(0,0,160,90);
+    gradient.addColorStop(0, '#4f46e5');
+    gradient.addColorStop(1, '#a855f7');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0,0,160,90);
+    
+    ctx.fillStyle = '#ffffff';
+    ctx.font = "bold 12px Outfit";
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText("⚡ Adjustment Clip", 80, 45);
   } else {
     // Audio / default
     ctx.fillStyle = '#1e293b';

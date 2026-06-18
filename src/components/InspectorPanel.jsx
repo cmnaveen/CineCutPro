@@ -200,6 +200,95 @@ export default function InspectorPanel() {
                 </div>
               )}
 
+              {/* Subtitle Options (Subtitle only) */}
+              {clip.mediaType === 'subtitle' && (
+                <div className="inspector-section">
+                  <span className="inspector-title">Subtitle Options</span>
+                  
+                  {/* Edit Caption Text */}
+                  <div className="form-group">
+                    <span className="form-label">Caption Text</span>
+                    <input 
+                      type="text" 
+                      className="form-input-text"
+                      value={clip.name}
+                      onChange={handleTextChange}
+                      placeholder="Enter subtitle caption..."
+                    />
+                  </div>
+
+                  {/* Font Size */}
+                  <div className="form-group">
+                    <span className="form-label">Font Size</span>
+                    <div className="form-control-slider">
+                      <input 
+                        type="range" 
+                        min={10} 
+                        max={100} 
+                        step={1} 
+                        value={clip.fontSize || 28} 
+                        onChange={(e) => updateClipProperties(clip.id, { fontSize: parseInt(e.target.value) })}
+                      />
+                      <span>{clip.fontSize || 28}px</span>
+                    </div>
+                  </div>
+
+                  {/* Text Color */}
+                  <div className="form-group">
+                    <span className="form-label">Text Color</span>
+                    <div className="color-picker-wrapper">
+                      <input 
+                        type="color" 
+                        value={clip.textColor || '#ffffff'} 
+                        onChange={(e) => updateClipProperties(clip.id, { textColor: e.target.value })}
+                      />
+                      <span style={{ fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}>{clip.textColor || '#ffffff'}</span>
+                    </div>
+                  </div>
+
+                  {/* Background Opacity */}
+                  <div className="form-group">
+                    <span className="form-label">Background Opacity</span>
+                    <div className="form-control-slider">
+                      <input 
+                        type="range" 
+                        min={0} 
+                        max={1} 
+                        step={0.05} 
+                        value={clip.textBgOpacity !== undefined ? clip.textBgOpacity : 0.65} 
+                        onChange={(e) => updateClipProperties(clip.id, { textBgOpacity: parseFloat(e.target.value) })}
+                      />
+                      <span>{Math.round((clip.textBgOpacity !== undefined ? clip.textBgOpacity : 0.65) * 100)}%</span>
+                    </div>
+                  </div>
+
+                  {/* Font Family */}
+                  <div className="form-group">
+                    <span className="form-label">Font Family</span>
+                    <select 
+                      className="form-input-text"
+                      value={clip.fontFamily || 'Inter'}
+                      onChange={(e) => updateClipProperties(clip.id, { fontFamily: e.target.value })}
+                    >
+                      <option value="Inter">Inter</option>
+                      <option value="Outfit">Outfit</option>
+                      <option value="Arial">Arial</option>
+                      <option value="Helvetica">Helvetica</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {/* Adjustment Clip Note */}
+              {clip.mediaType === 'adjustment' && (
+                <div className="inspector-section" style={{ borderLeft: '3px solid var(--primary)', background: 'rgba(99, 102, 241, 0.05)', borderRadius: '4px', padding: '10px' }}>
+                  <span className="inspector-title" style={{ color: 'var(--primary)' }}>⚡ Adjustment Layer</span>
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: '4px 0 0 0', lineHeight: '1.4' }}>
+                    This layer applies all of its Color Grade and Blur effects to every track underneath it on the timeline. Adjust settings in the Effects tab below.
+                  </p>
+                </div>
+              )}
+
               {/* Basic Properties */}
               <div className="inspector-section">
                 <span className="inspector-title">Basic Adjustments</span>

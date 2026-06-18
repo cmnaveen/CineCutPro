@@ -42,8 +42,8 @@ export const compositeTimelineFrame = ({
   ctx.fillStyle = '#090d16';
   ctx.fillRect(0, 0, width, height);
 
-  // 2. Identify active, unmuted tracks (sorted by Z-index: V1 first, then V2, then Text T1)
-  const trackOrder = ['v1', 'v2', 't1']; // V1 underneath, V2 on top, Text highest
+  // 2. Identify active, unmuted tracks (sorted by Z-index: V1 first, then V2, then Text T1, then Subtitles)
+  const trackOrder = ['v1', 'v2', 't1', 'sub1']; 
   const activeTracks = tracks
     .filter(t => !t.muted)
     .sort((a, b) => trackOrder.indexOf(a.id) - trackOrder.indexOf(b.id));
@@ -62,6 +62,82 @@ export const compositeTimelineFrame = ({
     );
 
     activeClips.forEach(clip => {
+      // Adjustment Clip Downward compositing
+      if (clip.mediaType === 'adjustment') {
+        ctx.save();
+        const { canvas: adjTempCanvas, ctx: adjTempCtx } = getOffscreenCanvas('adjustment_temp', width, height);
+        adjTempCtx.clearRect(0, 0, width, height);
+        adjTempCtx.drawImage(displayCanvas, 0, 0);
+
+        let filterString = '';
+        const opacity = getInterpolatedValue(clip, 'opacity', playheadTime, clip.opacity);
+
+        clip.effects.forEach(eff => {
+          if (!eff.enabled) return;
+
+          if (eff.type === 'ColorGrade') {
+            const brightness = getInterpolatedValue(clip, 'brightness', playheadTime, eff.params.brightness || 0);
+            const contrast = getInterpolatedValue(clip, 'contrast', playheadTime, eff.params.contrast || 1.0);
+            const saturation = getInterpolatedValue(clip, 'saturation', playheadTime, eff.params.saturation || 1.0);
+            const hue = getInterpolatedValue(clip, 'hue', playheadTime, eff.params.hue || 0);
+
+            const bPct = Math.round(100 + brightness * 100);
+            const cPct = Math.round(contrast * 100);
+            const sPct = Math.round(saturation * 100);
+            
+            filterString += ` brightness(${bPct}%) contrast(${cPct}%) saturate(${sPct}%) hue-rotate(${hue}deg)`;
+          } else if (eff.type === 'Blur') {
+            const radius = getInterpolatedValue(clip, 'blur', playheadTime, eff.params.radius || 0);
+            filterString += ` blur(${radius}px)`;
+          }
+        });
+
+        if (filterString.trim()) {
+          ctx.filter = filterString.trim();
+        }
+        ctx.globalAlpha = opacity;
+        ctx.drawImage(adjTempCanvas, 0, 0);
+        ctx.restore();
+        return;
+      }
+
+      // Subtitle Clip rendering (gorgeous closed caption overlay plate)
+      if (clip.mediaType === 'subtitle') {
+        ctx.save();
+        const text = clip.name || 'Subtitle text';
+        const fontSizeVal = clip.fontSize || 28;
+        const fontFamily = clip.fontFamily || 'Inter';
+        const textColor = clip.textColor || '#ffffff';
+        const bgOpacity = clip.textBgOpacity !== undefined ? clip.textBgOpacity : 0.65;
+
+        ctx.font = `500 ${fontSizeVal}px '${fontFamily}', sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        const textMetrics = ctx.measureText(text);
+        const textWidth = textMetrics.width;
+        const textHeight = fontSizeVal;
+
+        const paddingX = 20;
+        const paddingY = 10;
+        const pillWidth = textWidth + paddingX * 2;
+        const pillHeight = textHeight + paddingY * 2;
+        const pillX = width / 2 - pillWidth / 2;
+        const pillY = height * 0.86 - pillHeight / 2;
+
+        // Draw translucent dark container
+        ctx.fillStyle = `rgba(0, 0, 0, ${bgOpacity})`;
+        ctx.beginPath();
+        ctx.roundRect(pillX, pillY, pillWidth, pillHeight, 8);
+        ctx.fill();
+
+        // Draw subtitle text
+        ctx.fillStyle = textColor;
+        ctx.fillText(text, width / 2, pillY + pillHeight / 2 + 1);
+        ctx.restore();
+        return;
+      }
+
       // Find asset
       const asset = mediaLibrary.find(m => m.id === clip.mediaId);
       

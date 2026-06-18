@@ -3,8 +3,37 @@ import { EditorContext } from '../context/EditorContext';
 import { generateMockAssets, getThumbnailDataUri } from '../utils/mockAssets';
 
 export default function MediaBrowser() {
-  const { mediaLibrary, addMediaAsset, removeMediaAsset, addClip, tracks } = useContext(EditorContext);
+  const { 
+    mediaLibrary, 
+    addMediaAsset, 
+    removeMediaAsset, 
+    addClip, 
+    tracks,
+    setSourceAsset,
+    setSourcePlayhead,
+    setSourceIn,
+    setSourceOut,
+    setSourcePlaying
+  } = useContext(EditorContext);
   const [searchQuery, setSearchQuery] = useState('');
+
+  const handleCreateAdjustmentAsset = () => {
+    const id = `asset_adjustment_${Date.now()}`;
+    const name = `Adjustment Clip ${mediaLibrary.filter(a => a.type === 'adjustment').length + 1}`;
+    const asset = {
+      id,
+      name,
+      type: 'adjustment',
+      url: '',
+      size: '0 KB',
+      duration: 5.0,
+      width: 1920,
+      height: 1080,
+      element: null,
+      thumbnailData: getThumbnailDataUri('adjustment')
+    };
+    addMediaAsset(asset);
+  };
   
   // Pre-load mock assets on first render if library is empty
   useEffect(() => {
@@ -170,6 +199,15 @@ export default function MediaBrowser() {
           />
         </label>
 
+        {/* Adjustment Clip Generator */}
+        <button 
+          className="btn btn-primary" 
+          onClick={handleCreateAdjustmentAsset}
+          style={{ width: '100%', marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '0.8rem', padding: '8px' }}
+        >
+          ⚡ New Adjustment Clip
+        </button>
+
         {/* Search Bar */}
         <input 
           type="text" 
@@ -194,6 +232,14 @@ export default function MediaBrowser() {
                 className="media-card"
                 draggable
                 onDragStart={(e) => handleDragStart(e, asset)}
+                onDoubleClick={() => {
+                  setSourceAsset(asset);
+                  setSourceIn(0);
+                  setSourceOut(asset.duration || 5);
+                  setSourcePlayhead(0);
+                  setSourcePlaying(false);
+                }}
+                title="Double-click to load in Source Monitor, drag to timeline"
               >
                 <div className="media-thumbnail-container">
                   {asset.thumbnailData ? (
