@@ -143,149 +143,204 @@ const renderClipToCanvas = (clip, playheadTime, targetCanvas, targetCtx, width, 
       // 1. NEON GLOW EFFECT (Vibrant glow, multi-layered shadows)
       clipCtx.save();
       const neonColor = textColor === '#ffffff' ? '#ec4899' : textColor;
+      clipCtx.lineJoin = 'round';
+      
+      // Step 1: Thick deep outer glow
       clipCtx.shadowColor = neonColor;
-      clipCtx.shadowBlur = Math.max(15, fontSizeVal * 0.25);
+      clipCtx.shadowBlur = Math.max(20, fontSizeVal * 0.3);
       clipCtx.strokeStyle = neonColor;
-      clipCtx.lineWidth = Math.max(3, fontSizeVal * 0.08);
+      clipCtx.lineWidth = Math.max(5, fontSizeVal * 0.09);
       clipCtx.strokeText(textStr, textX, textY);
       
-      clipCtx.shadowBlur = Math.max(8, fontSizeVal * 0.12);
-      clipCtx.lineWidth = Math.max(1.5, fontSizeVal * 0.04);
+      // Step 2: Medium glowing stroke
+      clipCtx.shadowBlur = Math.max(10, fontSizeVal * 0.15);
+      clipCtx.lineWidth = Math.max(2.5, fontSizeVal * 0.05);
       clipCtx.strokeText(textStr, textX, textY);
 
-      // Inner white tube core
-      clipCtx.shadowBlur = 0;
+      // Step 3: Inner white tube core with tight glow
+      clipCtx.strokeStyle = '#ffffff';
+      clipCtx.lineWidth = Math.max(1.2, fontSizeVal * 0.025);
+      clipCtx.shadowBlur = Math.max(3, fontSizeVal * 0.05);
+      clipCtx.strokeText(textStr, textX, textY);
+
+      // Step 4: Solid white core text
       clipCtx.fillStyle = '#ffffff';
+      clipCtx.shadowBlur = 0;
       clipCtx.fillText(textStr, textX, textY);
       clipCtx.restore();
 
     } else if (textEffect === 'chrome') {
-      // 2. SILVER CHROME EFFECT (Metallic gradient, dark outline, reflection glow)
+      // 2. SILVER CHROME EFFECT (Metallic liquid reflection, dark outline)
       clipCtx.save();
       const gradient = clipCtx.createLinearGradient(0, textY - fontSizeVal/2, 0, textY + fontSizeVal/2);
-      gradient.addColorStop(0, '#ffffff');
-      gradient.addColorStop(0.25, '#e2e8f0');
-      gradient.addColorStop(0.5, '#475569');
-      gradient.addColorStop(0.52, '#0f172a');
-      gradient.addColorStop(0.75, '#cbd5e1');
-      gradient.addColorStop(1, '#ffffff');
+      gradient.addColorStop(0.0, '#3b82f6'); // sky blue
+      gradient.addColorStop(0.3, '#eff6ff');  // sky cloud
+      gradient.addColorStop(0.48, '#ffffff'); // horizon flash
+      gradient.addColorStop(0.50, '#1e293b'); // dark horizon cut
+      gradient.addColorStop(0.52, '#0f172a'); // ground base
+      gradient.addColorStop(0.75, '#94a3b8'); // silver ground reflection
+      gradient.addColorStop(1.0, '#f8fafc');  // bottom highlight
 
-      // Draw dark outline behind
-      clipCtx.strokeStyle = '#0f172a';
-      clipCtx.lineWidth = Math.max(8, fontSizeVal * 0.12);
+      // Thick slate outline framing
+      clipCtx.strokeStyle = '#020617';
+      clipCtx.lineWidth = Math.max(7, fontSizeVal * 0.1);
+      clipCtx.lineJoin = 'round';
       clipCtx.strokeText(textStr, textX, textY);
 
-      // Inner metallic fill
+      // Metallic liquid gradient fill
       clipCtx.fillStyle = gradient;
       clipCtx.fillText(textStr, textX, textY);
       
-      // Thin white highlight stroke on top
-      clipCtx.strokeStyle = 'rgba(255,255,255,0.6)';
-      clipCtx.lineWidth = 1.5;
+      // Fine bevel specular reflection stroke
+      clipCtx.strokeStyle = 'rgba(255,255,255,0.7)';
+      clipCtx.lineWidth = 1.2;
       clipCtx.strokeText(textStr, textX, textY);
       clipCtx.restore();
 
     } else if (textEffect === 'retro3d') {
-      // 3. RETRO 3D EXTRUDED EFFECT (Block 3D layers, custom fill face)
+      // 3. RETRO 3D EXTRUDED EFFECT (Block depth layers, retro synth sunset face)
       clipCtx.save();
-      const extrusionDeep = Math.max(4, Math.floor(fontSizeVal * 0.08));
-      const extrusionColor = textColor === '#ffffff' ? '#e11d48' : textColor;
-      const faceColor = '#fbbf24';
+      const depth = Math.max(6, Math.floor(fontSizeVal * 0.11));
+      const frontColor = textColor === '#ffffff' ? '#f59e0b' : textColor; // user color or amber
+      const backColor = '#4c0519'; // dark ruby extrusion
+      const strokeColor = '#000000';
+      
+      clipCtx.lineJoin = 'round';
+      clipCtx.lineWidth = Math.max(3.5, fontSizeVal * 0.055);
 
-      // Render depth layers back to front
-      clipCtx.strokeStyle = '#000000';
-      clipCtx.lineWidth = Math.max(4, fontSizeVal * 0.06);
-      clipCtx.fillStyle = extrusionColor;
-
-      for (let i = extrusionDeep; i > 0; i--) {
+      // Draw the block extrusion depth (back to front)
+      for (let i = depth; i > 0; i--) {
+        clipCtx.strokeStyle = strokeColor;
         clipCtx.strokeText(textStr, textX - i, textY + i);
+        clipCtx.fillStyle = backColor;
         clipCtx.fillText(textStr, textX - i, textY + i);
       }
 
-      // Draw front face outline
+      // Draw front face border
+      clipCtx.strokeStyle = strokeColor;
       clipCtx.strokeText(textStr, textX, textY);
-      
-      // Draw front face fill
-      clipCtx.fillStyle = faceColor;
+
+      // Draw synthwave sunset face gradient fill
+      const faceGrad = clipCtx.createLinearGradient(0, textY - fontSizeVal/2, 0, textY + fontSizeVal/2);
+      faceGrad.addColorStop(0, '#fef08a'); // yellow top
+      faceGrad.addColorStop(0.5, '#fb923c'); // orange mid
+      faceGrad.addColorStop(1, frontColor);  // crimson/user bottom
+      clipCtx.fillStyle = faceGrad;
       clipCtx.fillText(textStr, textX, textY);
       clipCtx.restore();
 
     } else if (textEffect === 'glitch') {
-      // 4. CYBERPUNK GLITCH EFFECT (Split RGB colors, pixel slices)
+      // 4. CYBERPUNK GLITCH EFFECT (Aberration shifts, scanlines, digital cut overlays)
       clipCtx.save();
-      // Draw Cyan layer (left offset)
+      const offset = Math.max(3, fontSizeVal * 0.035);
+      
+      // Draw cyan shadow offset
       clipCtx.fillStyle = '#00f0ff';
-      clipCtx.fillText(textStr, textX - Math.max(2, fontSizeVal * 0.03), textY);
-
-      // Draw Red layer (right offset)
+      clipCtx.fillText(textStr, textX - offset, textY + 1.5);
+      
+      // Draw magenta shadow offset
       clipCtx.fillStyle = '#ff003c';
-      clipCtx.fillText(textStr, textX + Math.max(2, fontSizeVal * 0.03), textY);
+      clipCtx.fillText(textStr, textX + offset, textY - 1.5);
 
-      // Draw primary White layer in center
-      clipCtx.fillStyle = '#ffffff';
+      // Draw main text (white or custom text color)
+      clipCtx.fillStyle = textColor === '#ffffff' ? '#ffffff' : textColor;
       clipCtx.fillText(textStr, textX, textY);
 
-      // Draw horizontal glitches (colored slice cuts)
-      const sliceCount = 3;
-      clipCtx.fillStyle = 'rgba(0, 240, 255, 0.4)';
-      for (let s = 0; s < sliceCount; s++) {
-        const sliceY = textY - fontSizeVal/2 + Math.random() * fontSizeVal;
-        const sliceH = Math.max(2, fontSizeVal * 0.04);
-        const sliceW = fontSizeVal * 2;
-        const sliceOffset = (Math.random() - 0.5) * 20;
-        clipCtx.fillRect(textX - sliceW/2 + sliceOffset, sliceY, sliceW, sliceH);
+      // Clip scanline patterns atop the text bounds
+      clipCtx.globalCompositeOperation = 'source-atop';
+      clipCtx.strokeStyle = 'rgba(0, 0, 0, 0.28)';
+      clipCtx.lineWidth = 1;
+      for (let y = textY - fontSizeVal; y < textY + fontSizeVal; y += 3) {
+        clipCtx.beginPath();
+        clipCtx.moveTo(textX - fontSizeVal * 2, y);
+        clipCtx.lineTo(textX + fontSizeVal * 2, y);
+        clipCtx.stroke();
       }
+      clipCtx.restore();
+      
+      // Render horizontal cyan/magenta glitch displacement bars on top
+      clipCtx.save();
+      clipCtx.fillStyle = '#00f0ff';
+      clipCtx.fillRect(textX - fontSizeVal * 1.1 + Math.random() * 20, textY - fontSizeVal * 0.25, fontSizeVal * 0.45, 3.5);
+      clipCtx.fillStyle = '#ff003c';
+      clipCtx.fillRect(textX + fontSizeVal * 0.3 - Math.random() * 20, textY + fontSizeVal * 0.18, fontSizeVal * 0.38, 3);
       clipCtx.restore();
 
     } else if (textEffect === 'gold') {
-      // 5. GOLDEN LUXURY EFFECT (Metallic gold gradient, gold outer glow, shadow)
+      // 5. GOLDEN LUXURY EFFECT (Metallic multi-stop gradient, outer gold halo, double highlights)
       clipCtx.save();
-      const goldGradient = clipCtx.createLinearGradient(0, textY - fontSizeVal/2, 0, textY + fontSizeVal/2);
-      goldGradient.addColorStop(0, '#bf953f');
-      goldGradient.addColorStop(0.25, '#fcf6ba');
-      goldGradient.addColorStop(0.5, '#b38728');
-      goldGradient.addColorStop(0.75, '#fbf5b7');
-      goldGradient.addColorStop(1, '#aa771c');
+      const goldGrad = clipCtx.createLinearGradient(0, textY - fontSizeVal/2, 0, textY + fontSizeVal/2);
+      goldGrad.addColorStop(0.0, '#b58c16'); // bronze
+      goldGrad.addColorStop(0.18, '#cfac62'); // classic gold
+      goldGrad.addColorStop(0.38, '#fcf6ba'); // bright gold highlight
+      goldGrad.addColorStop(0.58, '#b38728'); // medium gold
+      goldGrad.addColorStop(0.82, '#edd69a'); // light gold
+      goldGrad.addColorStop(1.0, '#664608'); // dark gold shadow
 
-      // Outer glow and drop shadow
-      clipCtx.shadowColor = 'rgba(170, 119, 28, 0.4)';
-      clipCtx.shadowBlur = 20;
-      clipCtx.strokeStyle = 'rgba(0,0,0,0.6)';
-      clipCtx.lineWidth = Math.max(4, fontSizeVal * 0.05);
+      // Frame border
+      clipCtx.strokeStyle = '#251a02';
+      clipCtx.lineWidth = Math.max(5, fontSizeVal * 0.08);
+      clipCtx.lineJoin = 'round';
       clipCtx.strokeText(textStr, textX, textY);
 
-      // Draw gold fill
-      clipCtx.shadowColor = 'rgba(0,0,0,0.8)';
-      clipCtx.shadowBlur = 8;
-      clipCtx.shadowOffsetX = 3;
-      clipCtx.shadowOffsetY = 3;
-      clipCtx.fillStyle = goldGradient;
+      // Gold text fill
+      clipCtx.fillStyle = goldGrad;
       clipCtx.fillText(textStr, textX, textY);
+
+      // Specification fine highlight
+      clipCtx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+      clipCtx.lineWidth = 1;
+      clipCtx.strokeText(textStr, textX, textY);
+
+      // Outer gold glowing halo (shadow text draw behind)
+      clipCtx.shadowColor = '#cfac62';
+      clipCtx.shadowBlur = Math.max(12, fontSizeVal * 0.15);
+      clipCtx.strokeStyle = '#b58c16';
+      clipCtx.lineWidth = 1.5;
+      clipCtx.strokeText(textStr, textX, textY);
       clipCtx.restore();
 
     } else if (textEffect === 'grunge') {
-      // 6. DISTRESSED GRUNGE EFFECT (Stencil dashed borders, scratches)
+      // 6. DISTRESSED GRUNGE EFFECT (Spray stencil dash outline, weathering scratches & pitted noise)
       clipCtx.save();
-      clipCtx.strokeStyle = textColor;
-      clipCtx.lineWidth = Math.max(2, fontSizeVal * 0.03);
-      clipCtx.setLineDash([Math.max(4, fontSizeVal * 0.05), Math.max(2, fontSizeVal * 0.03)]);
+      const baseColor = textColor === '#ffffff' ? '#e2e8f0' : textColor;
+      
+      clipCtx.fillStyle = baseColor;
+      clipCtx.fillText(textStr, textX, textY);
+      
+      // Weathered border overlay
+      clipCtx.strokeStyle = 'rgba(0,0,0,0.5)';
+      clipCtx.lineWidth = 2;
+      clipCtx.setLineDash([4, 4]);
       clipCtx.strokeText(textStr, textX, textY);
 
-      clipCtx.fillStyle = textColor;
-      clipCtx.fillText(textStr, textX, textY);
-
-      // Scratched cuts using destination-out mask
+      // Apply weathered noise masks over drawing using destination-out
       clipCtx.globalCompositeOperation = 'destination-out';
-      clipCtx.strokeStyle = 'rgba(0, 0, 0, 1.0)';
+      
+      // Draw irregular scratches
+      clipCtx.strokeStyle = '#000000';
       clipCtx.lineWidth = Math.max(1, fontSizeVal * 0.015);
-      clipCtx.beginPath();
-      for (let j = 0; j < 5; j++) {
+      for (let j = 0; j < 6; j++) {
         const startX = textX - fontSizeVal * 1.5 + Math.random() * fontSizeVal * 3;
-        const startY = textY - fontSizeVal/2 - 5;
+        const startY = textY - fontSizeVal * 0.6;
+        clipCtx.beginPath();
         clipCtx.moveTo(startX, startY);
-        clipCtx.lineTo(startX - 15 + Math.random() * 30, startY + fontSizeVal + 10);
+        clipCtx.lineTo(startX + (Math.random() - 0.5) * 20, startY + fontSizeVal * 0.4);
+        clipCtx.lineTo(startX + (Math.random() - 0.5) * 35, startY + fontSizeVal * 1.2);
+        clipCtx.stroke();
       }
-      clipCtx.stroke();
+
+      // Draw pitted sandblasted splatter dots
+      const splatterCount = Math.floor(fontSizeVal * 0.65);
+      for (let s = 0; s < splatterCount; s++) {
+        const pX = textX - fontSizeVal * 1.5 + Math.random() * fontSizeVal * 3;
+        const pY = textY - fontSizeVal * 0.6 + Math.random() * fontSizeVal * 1.2;
+        const radius = Math.random() * 2.2 + 0.5;
+        clipCtx.beginPath();
+        clipCtx.arc(pX, pY, radius, 0, Math.PI * 2);
+        clipCtx.fill();
+      }
+
       clipCtx.restore();
 
     } else {
