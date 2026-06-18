@@ -130,16 +130,172 @@ const renderClipToCanvas = (clip, playheadTime, targetCanvas, targetCtx, width, 
     const textColor = clip.textColor || '#ffffff';
     const fontSizeVal = clip.fontSize || 80;
     const fontFamily = clip.fontFamily || 'Outfit';
+    const textEffect = clip.textEffect || 'default';
+    const textStr = clip.name || 'Text Overlay';
+    const textX = width / 2;
+    const textY = height / 2;
     
-    clipCtx.fillStyle = textColor;
     clipCtx.font = `bold ${fontSizeVal}px '${fontFamily}', sans-serif`;
     clipCtx.textAlign = 'center';
     clipCtx.textBaseline = 'middle';
-    // Add subtle shadow text
-    clipCtx.shadowColor = 'rgba(0,0,0,0.8)';
-    clipCtx.shadowBlur = 10;
-    clipCtx.fillText(clip.name || 'Text Overlay', width/2, height/2);
-    clipCtx.shadowBlur = 0; // reset
+
+    if (textEffect === 'neon') {
+      // 1. NEON GLOW EFFECT (Vibrant glow, multi-layered shadows)
+      clipCtx.save();
+      const neonColor = textColor === '#ffffff' ? '#ec4899' : textColor;
+      clipCtx.shadowColor = neonColor;
+      clipCtx.shadowBlur = Math.max(15, fontSizeVal * 0.25);
+      clipCtx.strokeStyle = neonColor;
+      clipCtx.lineWidth = Math.max(3, fontSizeVal * 0.08);
+      clipCtx.strokeText(textStr, textX, textY);
+      
+      clipCtx.shadowBlur = Math.max(8, fontSizeVal * 0.12);
+      clipCtx.lineWidth = Math.max(1.5, fontSizeVal * 0.04);
+      clipCtx.strokeText(textStr, textX, textY);
+
+      // Inner white tube core
+      clipCtx.shadowBlur = 0;
+      clipCtx.fillStyle = '#ffffff';
+      clipCtx.fillText(textStr, textX, textY);
+      clipCtx.restore();
+
+    } else if (textEffect === 'chrome') {
+      // 2. SILVER CHROME EFFECT (Metallic gradient, dark outline, reflection glow)
+      clipCtx.save();
+      const gradient = clipCtx.createLinearGradient(0, textY - fontSizeVal/2, 0, textY + fontSizeVal/2);
+      gradient.addColorStop(0, '#ffffff');
+      gradient.addColorStop(0.25, '#e2e8f0');
+      gradient.addColorStop(0.5, '#475569');
+      gradient.addColorStop(0.52, '#0f172a');
+      gradient.addColorStop(0.75, '#cbd5e1');
+      gradient.addColorStop(1, '#ffffff');
+
+      // Draw dark outline behind
+      clipCtx.strokeStyle = '#0f172a';
+      clipCtx.lineWidth = Math.max(8, fontSizeVal * 0.12);
+      clipCtx.strokeText(textStr, textX, textY);
+
+      // Inner metallic fill
+      clipCtx.fillStyle = gradient;
+      clipCtx.fillText(textStr, textX, textY);
+      
+      // Thin white highlight stroke on top
+      clipCtx.strokeStyle = 'rgba(255,255,255,0.6)';
+      clipCtx.lineWidth = 1.5;
+      clipCtx.strokeText(textStr, textX, textY);
+      clipCtx.restore();
+
+    } else if (textEffect === 'retro3d') {
+      // 3. RETRO 3D EXTRUDED EFFECT (Block 3D layers, custom fill face)
+      clipCtx.save();
+      const extrusionDeep = Math.max(4, Math.floor(fontSizeVal * 0.08));
+      const extrusionColor = textColor === '#ffffff' ? '#e11d48' : textColor;
+      const faceColor = '#fbbf24';
+
+      // Render depth layers back to front
+      clipCtx.strokeStyle = '#000000';
+      clipCtx.lineWidth = Math.max(4, fontSizeVal * 0.06);
+      clipCtx.fillStyle = extrusionColor;
+
+      for (let i = extrusionDeep; i > 0; i--) {
+        clipCtx.strokeText(textStr, textX - i, textY + i);
+        clipCtx.fillText(textStr, textX - i, textY + i);
+      }
+
+      // Draw front face outline
+      clipCtx.strokeText(textStr, textX, textY);
+      
+      // Draw front face fill
+      clipCtx.fillStyle = faceColor;
+      clipCtx.fillText(textStr, textX, textY);
+      clipCtx.restore();
+
+    } else if (textEffect === 'glitch') {
+      // 4. CYBERPUNK GLITCH EFFECT (Split RGB colors, pixel slices)
+      clipCtx.save();
+      // Draw Cyan layer (left offset)
+      clipCtx.fillStyle = '#00f0ff';
+      clipCtx.fillText(textStr, textX - Math.max(2, fontSizeVal * 0.03), textY);
+
+      // Draw Red layer (right offset)
+      clipCtx.fillStyle = '#ff003c';
+      clipCtx.fillText(textStr, textX + Math.max(2, fontSizeVal * 0.03), textY);
+
+      // Draw primary White layer in center
+      clipCtx.fillStyle = '#ffffff';
+      clipCtx.fillText(textStr, textX, textY);
+
+      // Draw horizontal glitches (colored slice cuts)
+      const sliceCount = 3;
+      clipCtx.fillStyle = 'rgba(0, 240, 255, 0.4)';
+      for (let s = 0; s < sliceCount; s++) {
+        const sliceY = textY - fontSizeVal/2 + Math.random() * fontSizeVal;
+        const sliceH = Math.max(2, fontSizeVal * 0.04);
+        const sliceW = fontSizeVal * 2;
+        const sliceOffset = (Math.random() - 0.5) * 20;
+        clipCtx.fillRect(textX - sliceW/2 + sliceOffset, sliceY, sliceW, sliceH);
+      }
+      clipCtx.restore();
+
+    } else if (textEffect === 'gold') {
+      // 5. GOLDEN LUXURY EFFECT (Metallic gold gradient, gold outer glow, shadow)
+      clipCtx.save();
+      const goldGradient = clipCtx.createLinearGradient(0, textY - fontSizeVal/2, 0, textY + fontSizeVal/2);
+      goldGradient.addColorStop(0, '#bf953f');
+      goldGradient.addColorStop(0.25, '#fcf6ba');
+      goldGradient.addColorStop(0.5, '#b38728');
+      goldGradient.addColorStop(0.75, '#fbf5b7');
+      goldGradient.addColorStop(1, '#aa771c');
+
+      // Outer glow and drop shadow
+      clipCtx.shadowColor = 'rgba(170, 119, 28, 0.4)';
+      clipCtx.shadowBlur = 20;
+      clipCtx.strokeStyle = 'rgba(0,0,0,0.6)';
+      clipCtx.lineWidth = Math.max(4, fontSizeVal * 0.05);
+      clipCtx.strokeText(textStr, textX, textY);
+
+      // Draw gold fill
+      clipCtx.shadowColor = 'rgba(0,0,0,0.8)';
+      clipCtx.shadowBlur = 8;
+      clipCtx.shadowOffsetX = 3;
+      clipCtx.shadowOffsetY = 3;
+      clipCtx.fillStyle = goldGradient;
+      clipCtx.fillText(textStr, textX, textY);
+      clipCtx.restore();
+
+    } else if (textEffect === 'grunge') {
+      // 6. DISTRESSED GRUNGE EFFECT (Stencil dashed borders, scratches)
+      clipCtx.save();
+      clipCtx.strokeStyle = textColor;
+      clipCtx.lineWidth = Math.max(2, fontSizeVal * 0.03);
+      clipCtx.setLineDash([Math.max(4, fontSizeVal * 0.05), Math.max(2, fontSizeVal * 0.03)]);
+      clipCtx.strokeText(textStr, textX, textY);
+
+      clipCtx.fillStyle = textColor;
+      clipCtx.fillText(textStr, textX, textY);
+
+      // Scratched cuts using destination-out mask
+      clipCtx.globalCompositeOperation = 'destination-out';
+      clipCtx.strokeStyle = 'rgba(0, 0, 0, 1.0)';
+      clipCtx.lineWidth = Math.max(1, fontSizeVal * 0.015);
+      clipCtx.beginPath();
+      for (let j = 0; j < 5; j++) {
+        const startX = textX - fontSizeVal * 1.5 + Math.random() * fontSizeVal * 3;
+        const startY = textY - fontSizeVal/2 - 5;
+        clipCtx.moveTo(startX, startY);
+        clipCtx.lineTo(startX - 15 + Math.random() * 30, startY + fontSizeVal + 10);
+      }
+      clipCtx.stroke();
+      clipCtx.restore();
+
+    } else {
+      // DEFAULT STYLE (Subtle shadow, solid color fill)
+      clipCtx.fillStyle = textColor;
+      clipCtx.shadowColor = 'rgba(0,0,0,0.8)';
+      clipCtx.shadowBlur = 10;
+      clipCtx.fillText(textStr, textX, textY);
+      clipCtx.shadowBlur = 0;
+    }
   } else if (asset && asset.draw) {
     // Procedural mock video or image
     asset.draw(clipCtx, clipTime);

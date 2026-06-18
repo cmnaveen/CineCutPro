@@ -203,6 +203,25 @@ export default function InspectorPanel() {
                       <option value="JetBrains Mono">JetBrains Mono</option>
                     </select>
                   </div>
+
+                  {/* Text Effect Style */}
+                  <div className="form-group">
+                    <span className="form-label">Text Effect Style</span>
+                    <select 
+                      className="form-input-text"
+                      value={clip.textEffect || 'default'}
+                      onChange={(e) => updateClipProperties(clip.id, { textEffect: e.target.value })}
+                      style={{ borderLeft: '3px solid var(--primary-light)' }}
+                    >
+                      <option value="default">✨ Default (Shadow Fill)</option>
+                      <option value="neon">💖 Vibrant Neon Glow</option>
+                      <option value="chrome">💿 Silver Chrome Metal</option>
+                      <option value="retro3d">🧱 Retro 3D Extrusion</option>
+                      <option value="glitch">⚡ Cyberpunk Glitch</option>
+                      <option value="gold">🏆 Golden Luxury</option>
+                      <option value="grunge">🛹 Distressed Grunge</option>
+                    </select>
+                  </div>
                 </div>
               )}
 
