@@ -2,9 +2,31 @@ import React, { useContext, useRef, useEffect, useState } from 'react';
 import { EditorContext } from '../context/EditorContext';
 import { compositeTimelineFrame, triggerAudioTimelineTick } from '../utils/mediaRenderer';
 
+const getActiveTapeAsset = (mediaLibrary, tapePlayhead) => {
+  const tapeAssets = (mediaLibrary || []).filter(asset => asset.type === 'video' || asset.type === 'image' || asset.type === 'audio');
+  const totalTapeDuration = tapeAssets.reduce((acc, asset) => acc + asset.duration, 0);
+  
+  let activeAsset = null;
+  let relativeTime = 0;
+  let accumulated = 0;
+  for (const asset of tapeAssets) {
+    if (tapePlayhead >= accumulated && tapePlayhead < accumulated + asset.duration) {
+      activeAsset = asset;
+      relativeTime = tapePlayhead - accumulated;
+      break;
+    }
+    accumulated += asset.duration;
+  }
+  if (!activeAsset && tapeAssets.length > 0) {
+    activeAsset = tapeAssets[tapeAssets.length - 1];
+    relativeTime = activeAsset.duration;
+  }
+  return { activeAsset, relativeTime, totalTapeDuration, tapeAssets };
+};
+
 export default function PreviewPanel() {
   const {
-    clips, clipsRef, tracks, mediaLibrary,
+    clips, clipsRef, transitionsRef, tracks, mediaLibrary,
     playhead, setPlayhead,
     playing, setPlaying,
     fps, timelineDuration,
@@ -18,7 +40,16 @@ export default function PreviewPanel() {
     sourceOut, setSourceOut,
     sourcePlaying, setSourcePlaying,
     playbackSpeed, setPlaybackSpeed,
-    insertClip, overwriteClip
+    insertClip, overwriteClip,
+
+    // Cut Page: Source Tape
+    sourceTapeMode, setSourceTapeMode,
+    sourceTapePlayhead, setSourceTapePlayhead,
+
+    // Cut Page: A/B Trim Editor
+    abTrimEditorOpen, setAbTrimEditorOpen,
+    abTrimEditPoint, setAbTrimEditPoint,
+    rollEdit
   } = useContext(EditorContext);
 
   const canvasRef = useRef(null);
@@ -64,6 +95,22 @@ export default function PreviewPanel() {
     sourceAssetRef.current = sourceAsset;
   }, [sourceAsset]);
 
+  const sourceTapeModeRef = useRef(sourceTapeMode);
+  const sourceTapePlayheadRef = useRef(sourceTapePlayhead);
+  const mediaLibraryRef = useRef(mediaLibrary);
+
+  useEffect(() => {
+    sourceTapeModeRef.current = sourceTapeMode;
+  }, [sourceTapeMode]);
+
+  useEffect(() => {
+    sourceTapePlayheadRef.current = sourceTapePlayhead;
+  }, [sourceTapePlayhead]);
+
+  useEffect(() => {
+    mediaLibraryRef.current = mediaLibrary;
+  }, [mediaLibrary]);
+
   // Main rendering & tick loop
   useEffect(() => {
     const tick = (timestamp) => {
@@ -72,53 +119,119 @@ export default function PreviewPanel() {
       lastTimeRef.current = timestamp;
 
       // 1. Source Monitor Playback update
-      let currentSourcePlayhead = sourcePlayheadRef.current;
-      if (sourcePlayingRef.current && sourceAssetRef.current) {
-        currentSourcePlayhead += delta;
-        if (currentSourcePlayhead >= sourceAssetRef.current.duration) {
-          currentSourcePlayhead = 0;
+      if (sourceTapeModeRef.current) {
+        const { totalTapeDuration } = getActiveTapeAsset(mediaLibraryRef.current, sourceTapePlayheadRef.current);
+        let currentTapePlayhead = sourceTapePlayheadRef.current;
+        if (sourcePlayingRef.current && totalTapeDuration > 0) {
+          currentTapePlayhead += delta;
+          if (currentTapePlayhead >= totalTapeDuration) {
+            currentTapePlayhead = 0;
+          }
+          setSourceTapePlayhead(currentTapePlayhead);
         }
-        setSourcePlayhead(currentSourcePlayhead);
-      }
 
-      // Render the source asset onto the sourceCanvas
-      if (sourceCanvasRef.current && sourceAssetRef.current) {
-        const sCanvas = sourceCanvasRef.current;
-        const sCtx = sCanvas.getContext('2d');
-        const sW = sCanvas.width;
-        const sH = sCanvas.height;
-        sCtx.fillStyle = '#090d16';
-        sCtx.fillRect(0, 0, sW, sH);
+        const { activeAsset, relativeTime } = getActiveTapeAsset(mediaLibraryRef.current, currentTapePlayhead);
 
-        const asset = sourceAssetRef.current;
-        if (asset.draw) {
-          asset.draw(sCtx, currentSourcePlayhead);
-        } else if (asset.element) {
-          try {
-            if (asset.type === 'video') {
-              const videoEl = asset.element;
-              if (sourcePlayingRef.current) {
-                if (videoEl.paused) {
-                  videoEl.currentTime = currentSourcePlayhead;
-                  videoEl.play().catch(() => {});
+        // Keep normal source states synchronized behind the scenes so F9/F10 edit actions work seamlessly!
+        if (activeAsset) {
+          if (!sourceAssetRef.current || sourceAssetRef.current.id !== activeAsset.id) {
+            setSourceAsset(activeAsset);
+            setSourceIn(0);
+            setSourceOut(activeAsset.duration || 5);
+          }
+          setSourcePlayhead(relativeTime);
+        }
+
+        // Render the active source tape asset onto the sourceCanvas
+        if (sourceCanvasRef.current && totalTapeDuration > 0 && activeAsset) {
+          const sCanvas = sourceCanvasRef.current;
+          const sCtx = sCanvas.getContext('2d');
+          const sW = sCanvas.width;
+          const sH = sCanvas.height;
+          sCtx.fillStyle = '#090d16';
+          sCtx.fillRect(0, 0, sW, sH);
+
+          if (activeAsset.draw) {
+            activeAsset.draw(sCtx, relativeTime);
+          } else if (activeAsset.element) {
+            try {
+              if (activeAsset.type === 'video') {
+                const videoEl = activeAsset.element;
+                if (sourcePlayingRef.current) {
+                  if (videoEl.paused) {
+                    videoEl.currentTime = relativeTime;
+                    videoEl.play().catch(() => {});
+                  }
+                  if (Math.abs(videoEl.currentTime - relativeTime) > 0.4) {
+                    videoEl.currentTime = relativeTime;
+                  }
+                } else {
+                  if (!videoEl.paused) videoEl.pause();
+                  if (Math.abs(videoEl.currentTime - relativeTime) > 0.04) {
+                    videoEl.currentTime = relativeTime;
+                  }
                 }
-                if (Math.abs(videoEl.currentTime - currentSourcePlayhead) > 0.4) {
-                  videoEl.currentTime = currentSourcePlayhead;
-                }
-              } else {
-                if (!videoEl.paused) videoEl.pause();
-                if (Math.abs(videoEl.currentTime - currentSourcePlayhead) > 0.04) {
-                  videoEl.currentTime = currentSourcePlayhead;
-                }
+                sCtx.drawImage(videoEl, 0, 0, sW, sH);
+              } else if (activeAsset.type === 'image') {
+                sCtx.drawImage(activeAsset.element, 0, 0, sW, sH);
               }
-              sCtx.drawImage(videoEl, 0, 0, sW, sH);
-            } else if (asset.type === 'image') {
-              sCtx.drawImage(asset.element, 0, 0, sW, sH);
+            } catch (err) {
+              sCtx.fillStyle = '#ef4444';
+              sCtx.font = '24px sans-serif';
+              sCtx.fillText(`Loading: ${activeAsset.name}`, 50, sH / 2);
             }
-          } catch (err) {
-            sCtx.fillStyle = '#ef4444';
-            sCtx.font = '24px sans-serif';
-            sCtx.fillText(`Loading: ${asset.name}`, 50, sH / 2);
+          }
+        }
+      } else {
+        // Normal Source Monitor Playback update
+        let currentSourcePlayhead = sourcePlayheadRef.current;
+        if (sourcePlayingRef.current && sourceAssetRef.current) {
+          currentSourcePlayhead += delta;
+          if (currentSourcePlayhead >= sourceAssetRef.current.duration) {
+            currentSourcePlayhead = 0;
+          }
+          setSourcePlayhead(currentSourcePlayhead);
+        }
+
+        // Render the source asset onto the sourceCanvas
+        if (sourceCanvasRef.current && sourceAssetRef.current) {
+          const sCanvas = sourceCanvasRef.current;
+          const sCtx = sCanvas.getContext('2d');
+          const sW = sCanvas.width;
+          const sH = sCanvas.height;
+          sCtx.fillStyle = '#090d16';
+          sCtx.fillRect(0, 0, sW, sH);
+
+          const asset = sourceAssetRef.current;
+          if (asset.draw) {
+            asset.draw(sCtx, currentSourcePlayhead);
+          } else if (asset.element) {
+            try {
+              if (asset.type === 'video') {
+                const videoEl = asset.element;
+                if (sourcePlayingRef.current) {
+                  if (videoEl.paused) {
+                    videoEl.currentTime = currentSourcePlayhead;
+                    videoEl.play().catch(() => {});
+                  }
+                  if (Math.abs(videoEl.currentTime - currentSourcePlayhead) > 0.4) {
+                    videoEl.currentTime = currentSourcePlayhead;
+                  }
+                } else {
+                  if (!videoEl.paused) videoEl.pause();
+                  if (Math.abs(videoEl.currentTime - currentSourcePlayhead) > 0.04) {
+                    videoEl.currentTime = currentSourcePlayhead;
+                  }
+                }
+                sCtx.drawImage(videoEl, 0, 0, sW, sH);
+              } else if (asset.type === 'image') {
+                sCtx.drawImage(asset.element, 0, 0, sW, sH);
+              }
+            } catch (err) {
+              sCtx.fillStyle = '#ef4444';
+              sCtx.font = '24px sans-serif';
+              sCtx.fillText(`Loading: ${asset.name}`, 50, sH / 2);
+            }
           }
         }
       }
@@ -206,6 +319,7 @@ export default function PreviewPanel() {
           displayCanvas: canvasRef.current,
           playheadTime: currentPlayhead,
           clips: clipsRef.current,
+          transitions: transitionsRef.current,
           tracks,
           mediaLibrary,
           getInterpolatedValue
@@ -280,11 +394,22 @@ export default function PreviewPanel() {
   };
 
   const updateSourceScrubFromX = (clientX) => {
-    if (!sourceScrubBarRef.current || !sourceAsset) return;
-    const rect = sourceScrubBarRef.current.getBoundingClientRect();
-    const clickX = clientX - rect.left;
-    const percentage = Math.max(0, Math.min(1, clickX / rect.width));
-    setSourcePlayhead(percentage * sourceAsset.duration);
+    if (!sourceScrubBarRef.current) return;
+    if (sourceTapeMode) {
+      const tapeAssets = mediaLibrary.filter(asset => asset.type === 'video' || asset.type === 'image' || asset.type === 'audio');
+      const totalTapeDuration = tapeAssets.reduce((acc, asset) => acc + asset.duration, 0);
+      if (totalTapeDuration <= 0) return;
+      const rect = sourceScrubBarRef.current.getBoundingClientRect();
+      const clickX = clientX - rect.left;
+      const percentage = Math.max(0, Math.min(1, clickX / rect.width));
+      setSourceTapePlayhead(percentage * totalTapeDuration);
+    } else {
+      if (!sourceAsset) return;
+      const rect = sourceScrubBarRef.current.getBoundingClientRect();
+      const clickX = clientX - rect.left;
+      const percentage = Math.max(0, Math.min(1, clickX / rect.width));
+      setSourcePlayhead(percentage * sourceAsset.duration);
+    }
   };
 
   useEffect(() => {
@@ -305,26 +430,52 @@ export default function PreviewPanel() {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isSourceScrubbing, sourceAsset]);
+  }, [isSourceScrubbing, sourceAsset, sourceTapeMode, mediaLibrary]);
 
   const handleStepFrame = (dir) => {
     setPlaying(false); // Pause play when stepping frame
-    const step = dir === 'prev' ? -1 : 1;
-    setPlayhead(prev => Math.max(0, Math.min(timelineDuration, prev + step / fps)));
+    const frameTime = 1 / fps;
+    if (dir === 'next') {
+      setPlayhead(Math.min(timelineDuration, playhead + frameTime));
+    } else {
+      setPlayhead(Math.max(0, playhead - frameTime));
+    }
   };
+
+  // Source Tape Mode Calculations
+  const tapeAssets = (mediaLibrary || []).filter(asset => asset.type === 'video' || asset.type === 'image' || asset.type === 'audio');
+  const totalTapeDuration = tapeAssets.reduce((acc, asset) => acc + asset.duration, 0);
+
+  const { activeAsset } = getActiveTapeAsset(mediaLibrary, sourceTapePlayhead);
+  const activeAssetIndex = activeAsset ? tapeAssets.indexOf(activeAsset) : -1;
+  const activeAssetOffset = activeAssetIndex >= 0
+    ? tapeAssets.slice(0, activeAssetIndex).reduce((acc, a) => acc + a.duration, 0)
+    : 0;
+
+  const currentSourceAsset = sourceTapeMode ? activeAsset : sourceAsset;
+  const currentSourceDur = sourceTapeMode ? totalTapeDuration : (sourceAsset?.duration || 5);
+  const currentSourcePos = sourceTapeMode ? sourceTapePlayhead : sourcePlayhead;
+
+  const inPercent = sourceTapeMode 
+    ? ((activeAssetOffset + sourceIn) / (totalTapeDuration || 1)) * 100 
+    : (sourceIn / (sourceAsset?.duration || 5)) * 100;
+  const outPercent = sourceTapeMode
+    ? ((activeAssetOffset + sourceOut) / (totalTapeDuration || 1)) * 100
+    : (sourceOut / (sourceAsset?.duration || 5)) * 100;
+  const highlightWidth = outPercent - inPercent;
 
   return (
     <div className="main-content" ref={containerRef}>
-      <div className={`preview-panel-container ${sourceAsset ? 'dual' : ''}`}>
+      <div className={`preview-panel-container ${(sourceAsset || sourceTapeMode) ? 'dual' : ''}`}>
         
-        {/* Source Monitor (Left side, only renders when an asset is loaded) */}
-        {sourceAsset && (
+        {/* Source Monitor (Left side, only renders when an asset is loaded or source tape mode is active) */}
+        {(sourceAsset || sourceTapeMode) && (
           <div className="monitor-pane source">
             <div className="monitor-titlebar">
-              <span className="monitor-title">🎬 Source Monitor &mdash; {sourceAsset.name}</span>
+              <span className="monitor-title">🎬 Source Monitor &mdash; {sourceTapeMode ? 'Concatenated Source Tape' : (sourceAsset?.name || '')}</span>
               <button 
                 className="close-monitor-btn" 
-                onClick={() => setSourceAsset(null)}
+                onClick={() => { setSourceAsset(null); setSourceTapeMode(false); }}
                 title="Close Source Monitor"
               >
                 ✖
@@ -343,28 +494,30 @@ export default function PreviewPanel() {
             <div className="player-controls">
               {/* Source scrub bar with Mark In/Out overlays */}
               <div className="playback-scrub-container">
-                <span className="playback-time">{formatTimecode(sourcePlayhead)}</span>
+                <span className="playback-time">{formatTimecode(currentSourcePos)}</span>
                 <div 
                   className="scrub-bar" 
                   ref={sourceScrubBarRef} 
                   onMouseDown={handleSourceScrubMouseDown}
                 >
                   {/* Highlighted In/Out segment */}
-                  <div 
-                    className="source-inout-highlight"
-                    style={{
-                      left: `${(sourceIn / sourceAsset.duration) * 100}%`,
-                      width: `${((sourceOut - sourceIn) / sourceAsset.duration) * 100}%`
-                    }}
-                  />
+                  {currentSourceAsset && (
+                    <div 
+                      className="source-inout-highlight"
+                      style={{
+                        left: `${inPercent}%`,
+                        width: `${highlightWidth}%`
+                      }}
+                    />
+                  )}
                   <div 
                     className="scrub-progress source-color" 
-                    style={{ width: `${(sourcePlayhead / sourceAsset.duration) * 100}%` }}
+                    style={{ width: `${(currentSourcePos / (currentSourceDur || 1)) * 100}%` }}
                   >
                     <div className="scrub-handle" />
                   </div>
                 </div>
-                <span className="playback-time">{formatTimecode(sourceAsset.duration)}</span>
+                <span className="playback-time">{formatTimecode(currentSourceDur)}</span>
               </div>
 
               {/* Source controls button row */}
@@ -394,15 +547,19 @@ export default function PreviewPanel() {
                   </button>
                 </div>
                 <div className="source-inout-readout">
-                  In: {sourceIn.toFixed(1)}s | Out: {sourceOut.toFixed(1)}s
+                  {currentSourceAsset ? (
+                    <>Active: {currentSourceAsset.name} | In: {sourceIn.toFixed(1)}s | Out: {sourceOut.toFixed(1)}s</>
+                  ) : (
+                    <>No active source media</>
+                  )}
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* 3-Point Edit Button overlay divider if sourceAsset is open */}
-        {sourceAsset && (
+        {/* 3-Point Edit Button overlay divider if source monitor is active */}
+        {(sourceAsset || (sourceTapeMode && currentSourceAsset)) && (
           <div className="monitor-divider-tools">
             <button 
               className="btn btn-primary edit-action-btn ripple" 
@@ -437,6 +594,83 @@ export default function PreviewPanel() {
               height={1080}
             />
             {showSafeZones && <div className="safe-zone-overlay" />}
+
+            {/* A/B Trim Editor Overlay */}
+            {abTrimEditorOpen && abTrimEditPoint && (() => {
+              const clipA = clips.find(c => c.id === abTrimEditPoint.clipAId);
+              const clipB = clips.find(c => c.id === abTrimEditPoint.clipBId);
+              if (!clipA || !clipB) return null;
+
+              const editBoundary = clipA.timelinePos + clipA.duration;
+              const nudge = (frames) => {
+                const delta = frames / fps;
+                const newBoundary = editBoundary + delta;
+                rollEdit(clipA.id, clipB.id, newBoundary);
+              };
+
+              // Generate filmstrip frames (simulate 5 frames around the edit point)
+              const generateFrameLabels = (clip, side) => {
+                const frames = [];
+                const edgeTime = side === 'A' ? clip.srcOut : clip.srcIn;
+                for (let i = -2; i <= 2; i++) {
+                  const frameTime = edgeTime + (i / fps);
+                  frames.push({
+                    label: `${(frameTime * fps).toFixed(0)}f`,
+                    offset: i,
+                    isEdge: i === 0
+                  });
+                }
+                return frames;
+              };
+
+              return (
+                <div className="ab-trim-editor">
+                  <div className="ab-trim-header">
+                    <span>A/B Trim Editor</span>
+                    <button className="ab-trim-close" onClick={() => setAbTrimEditorOpen(false)}>✕</button>
+                  </div>
+                  <div className="ab-trim-body">
+                    {/* Clip A (outgoing) filmstrip */}
+                    <div className="filmstrip-row clip-a">
+                      <span className="filmstrip-label">A: {clipA.name}</span>
+                      <div className="filmstrip-frames">
+                        {generateFrameLabels(clipA, 'A').map((f, i) => (
+                          <div key={i} className={`filmstrip-frame ${f.isEdge ? 'edge' : ''}`}>
+                            <div className="frame-thumb" />
+                            <span className="frame-label">{f.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Edit point indicator */}
+                    <div className="ab-trim-divider">
+                      <div className="trim-point-line" />
+                      <span className="trim-point-time">{editBoundary.toFixed(2)}s</span>
+                    </div>
+                    {/* Clip B (incoming) filmstrip */}
+                    <div className="filmstrip-row clip-b">
+                      <span className="filmstrip-label">B: {clipB.name}</span>
+                      <div className="filmstrip-frames">
+                        {generateFrameLabels(clipB, 'B').map((f, i) => (
+                          <div key={i} className={`filmstrip-frame ${f.isEdge ? 'edge' : ''}`}>
+                            <div className="frame-thumb" />
+                            <span className="frame-label">{f.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  {/* Nudge controls */}
+                  <div className="ab-trim-nudge">
+                    <button className="nudge-btn" onClick={() => nudge(-5)} title="-5 frames">◀◀ -5</button>
+                    <button className="nudge-btn" onClick={() => nudge(-1)} title="-1 frame">◀ -1</button>
+                    <span className="nudge-label">Nudge</span>
+                    <button className="nudge-btn" onClick={() => nudge(1)} title="+1 frame">+1 ▶</button>
+                    <button className="nudge-btn" onClick={() => nudge(5)} title="+5 frames">+5 ▶▶</button>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           <div className="player-controls">

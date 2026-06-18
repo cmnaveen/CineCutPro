@@ -40,6 +40,26 @@ export const EditorProvider = ({ children }) => {
   const [loopStart, setLoopStart] = useState(0);
   const [loopEnd, setLoopEnd] = useState(10);
 
+  // Cut Page: Source Tape Mode
+  const [sourceTapeMode, setSourceTapeMode] = useState(false);
+  const [sourceTapePlayhead, setSourceTapePlayhead] = useState(0);
+
+  // Cut Page: Transitions
+  const [transitions, setTransitions] = useState([]); // { id, clipAId, clipBId, type, duration }
+
+  // Cut Page: Boring Shot / Jump Cut Detector
+  const [boringThreshold, setBoringThreshold] = useState(8); // seconds
+  const [jumpCutThreshold, setJumpCutThreshold] = useState(10); // frames
+  const [analysisHighlights, setAnalysisHighlights] = useState([]); // { clipId, type: 'boring'|'jumpcut' }
+  const [boringDetectorOpen, setBoringDetectorOpen] = useState(false);
+
+  // Cut Page: A/B Trim Editor
+  const [abTrimEditorOpen, setAbTrimEditorOpen] = useState(false);
+  const [abTrimEditPoint, setAbTrimEditPoint] = useState(null); // { clipAId, clipBId }
+
+  // Cut Page: Transitions Panel
+  const [transitionsPanelOpen, setTransitionsPanelOpen] = useState(false);
+
   // Undo / Redo Stacks
   const [undoStack, setUndoStack] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
@@ -56,6 +76,12 @@ export const EditorProvider = ({ children }) => {
   useEffect(() => {
     clipsRef.current = clips;
   }, [clips]);
+
+  // Keep a ref to transitions
+  const transitionsRef = useRef(transitions);
+  useEffect(() => {
+    transitionsRef.current = transitions;
+  }, [transitions]);
 
   // History Helper: Push current state to undo stack
   const saveHistory = useCallback((currentTracks = tracks, currentClips = clips, currentMedia = mediaLibrary) => {
@@ -1000,6 +1026,221 @@ export const EditorProvider = ({ children }) => {
     });
   }, [saveHistory]);
 
+  // ===== CUT PAGE: Intelligent Edit Modes =====
+
+  // Smart Insert: inserts at the nearest edit point to the playhead, ripples
+  const smartInsert = useCallback(() => {
+    if (!sourceAsset || sourceOut <= sourceIn) return;
+    saveHistory();
+    const trackId = selectedTrackId || (tracks.find(t => t.type === 'video') || tracks[0]).id;
+    const trackClips = clips.filter(c => c.trackId === trackId).sort((a, b) => a.timelinePos - b.timelinePos);
+
+    // Find nearest edit point to playhead
+    let nearestEditPoint = 0;
+    let minDist = Infinity;
+    for (const c of trackClips) {
+      const startDist = Math.abs(c.timelinePos - playhead);
+      const endDist = Math.abs((c.timelinePos + c.duration) - playhead);
+      if (startDist < minDist) { minDist = startDist; nearestEditPoint = c.timelinePos; }
+      if (endDist < minDist) { minDist = endDist; nearestEditPoint = c.timelinePos + c.duration; }
+    }
+
+    const insertDuration = sourceOut - sourceIn;
+    const newClip = {
+      id: `c_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      trackId,
+      name: sourceAsset.name + ' (Smart Insert)',
+      mediaType: sourceAsset.type || 'video',
+      mediaId: sourceAsset.id,
+      sourceUrl: sourceAsset.url || '',
+      srcIn: sourceIn,
+      srcOut: sourceOut,
+      timelinePos: nearestEditPoint,
+      duration: insertDuration,
+      speed: 1.0, volume: 1.0, opacity: 1.0,
+      crop: { left: 0, top: 0, right: 0, bottom: 0 },
+      transform: { x: 0, y: 0, scale: 1.0, rotation: 0 },
+      effects: [],
+      keyframes: { opacity: [], volume: [], scale: [], rotation: [], brightness: [], contrast: [], saturation: [], blur: [] }
+    };
+
+    // Ripple all clips at or after the insert point
+    const rippled = clips.map(c => {
+      if (c.trackId === trackId && c.timelinePos >= nearestEditPoint) {
+        return { ...c, timelinePos: c.timelinePos + insertDuration };
+      }
+      return c;
+    });
+    setClips([...rippled, newClip]);
+    setSelectedClipId(newClip.id);
+  }, [sourceAsset, sourceIn, sourceOut, playhead, selectedTrackId, tracks, clips, saveHistory]);
+
+  // Append at End: adds the source selection to the end of the timeline
+  const appendAtEnd = useCallback(() => {
+    if (!sourceAsset || sourceOut <= sourceIn) return;
+    saveHistory();
+    const trackId = selectedTrackId || (tracks.find(t => t.type === 'video') || tracks[0]).id;
+    const trackClips = clips.filter(c => c.trackId === trackId);
+    const endPos = trackClips.length > 0 ? Math.max(...trackClips.map(c => c.timelinePos + c.duration)) : 0;
+    const dur = sourceOut - sourceIn;
+    const newClip = {
+      id: `c_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      trackId,
+      name: sourceAsset.name + ' (Appended)',
+      mediaType: sourceAsset.type || 'video',
+      mediaId: sourceAsset.id,
+      sourceUrl: sourceAsset.url || '',
+      srcIn: sourceIn, srcOut: sourceOut,
+      timelinePos: endPos, duration: dur,
+      speed: 1.0, volume: 1.0, opacity: 1.0,
+      crop: { left: 0, top: 0, right: 0, bottom: 0 },
+      transform: { x: 0, y: 0, scale: 1.0, rotation: 0 },
+      effects: [],
+      keyframes: { opacity: [], volume: [], scale: [], rotation: [], brightness: [], contrast: [], saturation: [], blur: [] }
+    };
+    setClips(prev => [...prev, newClip]);
+    setSelectedClipId(newClip.id);
+  }, [sourceAsset, sourceIn, sourceOut, selectedTrackId, tracks, clips, saveHistory]);
+
+  // Place on Top: drops on the next upper track at the playhead position
+  const placeOnTop = useCallback(() => {
+    if (!sourceAsset || sourceOut <= sourceIn) return;
+    saveHistory();
+    const videoTracks = tracks.filter(t => t.type === 'video');
+    const currentIdx = videoTracks.findIndex(t => t.id === selectedTrackId);
+    const targetTrack = currentIdx > 0 ? videoTracks[currentIdx - 1] : (videoTracks[0] || tracks[0]);
+    const dur = sourceOut - sourceIn;
+    const newClip = {
+      id: `c_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      trackId: targetTrack.id,
+      name: sourceAsset.name + ' (Place on Top)',
+      mediaType: sourceAsset.type || 'video',
+      mediaId: sourceAsset.id,
+      sourceUrl: sourceAsset.url || '',
+      srcIn: sourceIn, srcOut: sourceOut,
+      timelinePos: playhead, duration: dur,
+      speed: 1.0, volume: 1.0, opacity: 1.0,
+      crop: { left: 0, top: 0, right: 0, bottom: 0 },
+      transform: { x: 0, y: 0, scale: 1.0, rotation: 0 },
+      effects: [],
+      keyframes: { opacity: [], volume: [], scale: [], rotation: [], brightness: [], contrast: [], saturation: [], blur: [] }
+    };
+    setClips(prev => [...prev, newClip]);
+    setSelectedClipId(newClip.id);
+  }, [sourceAsset, sourceIn, sourceOut, playhead, selectedTrackId, tracks, saveHistory]);
+
+  // Ripple Overwrite: replaces clip at playhead, ripples if duration differs
+  const rippleOverwrite = useCallback(() => {
+    if (!sourceAsset || sourceOut <= sourceIn) return;
+    saveHistory();
+    const trackId = selectedTrackId || (tracks.find(t => t.type === 'video') || tracks[0]).id;
+    const trackClips = clips.filter(c => c.trackId === trackId).sort((a, b) => a.timelinePos - b.timelinePos);
+    const targetClip = trackClips.find(c => playhead >= c.timelinePos && playhead < c.timelinePos + c.duration);
+    if (!targetClip) return;
+
+    const newDur = sourceOut - sourceIn;
+    const oldDur = targetClip.duration;
+    const delta = newDur - oldDur;
+
+    const newClip = {
+      ...targetClip,
+      id: `c_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      name: sourceAsset.name + ' (Ripple OW)',
+      mediaId: sourceAsset.id,
+      sourceUrl: sourceAsset.url || '',
+      srcIn: sourceIn, srcOut: sourceOut,
+      duration: newDur,
+    };
+
+    setClips(prev => prev.filter(c => c.id !== targetClip.id).map(c => {
+      if (c.trackId === trackId && c.timelinePos > targetClip.timelinePos) {
+        return { ...c, timelinePos: c.timelinePos + delta };
+      }
+      return c;
+    }).concat([newClip]));
+    setSelectedClipId(newClip.id);
+  }, [sourceAsset, sourceIn, sourceOut, playhead, selectedTrackId, tracks, clips, saveHistory]);
+
+  // Source Overwrite: synchronized cutaway placement on the track above
+  const sourceOverwrite = useCallback(() => {
+    if (!sourceAsset || sourceOut <= sourceIn) return;
+    saveHistory();
+    const videoTracks = tracks.filter(t => t.type === 'video');
+    const currentTrackId = selectedTrackId || (videoTracks[videoTracks.length - 1] || tracks[0]).id;
+    const currentIdx = videoTracks.findIndex(t => t.id === currentTrackId);
+    const targetTrack = currentIdx > 0 ? videoTracks[currentIdx - 1] : (videoTracks[0] || tracks[0]);
+    const dur = sourceOut - sourceIn;
+    const newClip = {
+      id: `c_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      trackId: targetTrack.id,
+      name: sourceAsset.name + ' (Src OW)',
+      mediaType: sourceAsset.type || 'video',
+      mediaId: sourceAsset.id,
+      sourceUrl: sourceAsset.url || '',
+      srcIn: sourceIn, srcOut: sourceOut,
+      timelinePos: playhead, duration: dur,
+      speed: 1.0, volume: 1.0, opacity: 1.0,
+      crop: { left: 0, top: 0, right: 0, bottom: 0 },
+      transform: { x: 0, y: 0, scale: 1.0, rotation: 0 },
+      effects: [],
+      keyframes: { opacity: [], volume: [], scale: [], rotation: [], brightness: [], contrast: [], saturation: [], blur: [] }
+    };
+    setClips(prev => [...prev, newClip]);
+    setSelectedClipId(newClip.id);
+  }, [sourceAsset, sourceIn, sourceOut, playhead, selectedTrackId, tracks, saveHistory]);
+
+  // Close Up: auto-crop/zoom to 2× centered on the frame
+  const closeUpEdit = useCallback(() => {
+    const targetClip = clips.find(c => c.id === selectedClipId);
+    if (!targetClip) return;
+    saveHistory();
+    setClips(prev => prev.map(c => {
+      if (c.id !== selectedClipId) return c;
+      return {
+        ...c,
+        transform: { ...c.transform, scale: 2.0 },
+        name: c.name + ' (Close Up)'
+      };
+    }));
+  }, [selectedClipId, clips, saveHistory]);
+
+  // Transition Management
+  const addTransition = useCallback((clipAId, clipBId, type = 'crossDissolve', duration = 1.0) => {
+    const id = `tr_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    setTransitions(prev => {
+      // Remove any existing transition at this edit point
+      const filtered = prev.filter(t => !(t.clipAId === clipAId && t.clipBId === clipBId));
+      return [...filtered, { id, clipAId, clipBId, type, duration }];
+    });
+  }, []);
+
+  const removeTransition = useCallback((transitionId) => {
+    setTransitions(prev => prev.filter(t => t.id !== transitionId));
+  }, []);
+
+  const updateTransition = useCallback((transitionId, updates) => {
+    setTransitions(prev => prev.map(t => t.id === transitionId ? { ...t, ...updates } : t));
+  }, []);
+
+  // Boring Shot / Jump Cut Analysis
+  const analyzeBoringShots = useCallback(() => {
+    const highlights = [];
+    const frameDuration = 1 / fps;
+    clips.forEach(c => {
+      if (c.duration > boringThreshold) {
+        highlights.push({ clipId: c.id, type: 'boring' });
+      }
+      if (c.duration < jumpCutThreshold * frameDuration) {
+        highlights.push({ clipId: c.id, type: 'jumpcut' });
+      }
+    });
+    setAnalysisHighlights(highlights);
+  }, [clips, boringThreshold, jumpCutThreshold, fps]);
+
+  const clearAnalysis = useCallback(() => {
+    setAnalysisHighlights([]);
+  }, []);
+
   // Add Subtitle Clip
   const addSubtitleClip = useCallback((timelinePos = 0) => {
     const subTrack = tracks.find(t => t.type === 'subtitle') || tracks[0];
@@ -1236,11 +1477,25 @@ export const EditorProvider = ({ children }) => {
       if (e.code === 'KeyT') {
         setTool('trim');
       }
+
+      // Cut Page Intelligent Edit Shortcuts
+      if (e.code === 'KeyW') {
+        e.preventDefault();
+        smartInsert();
+      }
+      if (e.code === 'KeyE') {
+        e.preventDefault();
+        appendAtEnd();
+      }
+      if (e.code === 'KeyQ') {
+        e.preventDefault();
+        placeOnTop();
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [playhead, selectedClipId, loopStart, loopEnd, fps, timelineDuration, undo, redo, deleteClip, duplicateClip, sourcePlayhead, sourceIn, sourceAsset, insertClip, overwriteClip]);
+  }, [playhead, selectedClipId, loopStart, loopEnd, fps, timelineDuration, undo, redo, deleteClip, duplicateClip, sourcePlayhead, sourceIn, sourceAsset, insertClip, overwriteClip, smartInsert, appendAtEnd, placeOnTop]);
 
   return (
     <EditorContext.Provider value={{
@@ -1272,7 +1527,28 @@ export const EditorProvider = ({ children }) => {
       // Editing operations
       insertClip, overwriteClip,
       rippleTrim, rollEdit, slipClip, slideClip,
-      addSubtitleClip
+      addSubtitleClip,
+
+      // Cut Page: Intelligent Edit Modes
+      smartInsert, appendAtEnd, placeOnTop, rippleOverwrite, sourceOverwrite, closeUpEdit,
+
+      // Cut Page: Source Tape
+      sourceTapeMode, setSourceTapeMode,
+      sourceTapePlayhead, setSourceTapePlayhead,
+
+      // Cut Page: Transitions
+      transitions, transitionsRef, addTransition, removeTransition, updateTransition,
+      transitionsPanelOpen, setTransitionsPanelOpen,
+
+      // Cut Page: Boring Shot Detector
+      boringThreshold, setBoringThreshold,
+      jumpCutThreshold, setJumpCutThreshold,
+      analysisHighlights, analyzeBoringShots, clearAnalysis,
+      boringDetectorOpen, setBoringDetectorOpen,
+
+      // Cut Page: A/B Trim Editor
+      abTrimEditorOpen, setAbTrimEditorOpen,
+      abTrimEditPoint, setAbTrimEditPoint
     }}>
       {children}
     </EditorContext.Provider>

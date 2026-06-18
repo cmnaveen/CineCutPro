@@ -6,7 +6,8 @@ export default function InspectorPanel() {
     clips, updateClipProperties,
     selectedClipId,
     addEffect, deleteEffect, updateEffectParam, toggleEffectEnabled,
-    toggleKeyframe, playhead, undoStack, splitClip
+    toggleKeyframe, playhead, undoStack, splitClip,
+    transitions, updateTransition, removeTransition
   } = useContext(EditorContext);
 
   const [activeTab, setActiveTab] = useState('properties'); // 'properties' | 'history'
@@ -14,6 +15,11 @@ export default function InspectorPanel() {
 
   // Find selected clip
   const clip = clips.find(c => c.id === selectedClipId);
+
+  // Find transitions associated with the selected clip
+  const associatedTransitions = clip 
+    ? (transitions || []).filter(t => t.clipAId === clip.id || t.clipBId === clip.id)
+    : [];
 
   const toggleEffectOpen = (id) => {
     setOpenEffects(prev => ({ ...prev, [id]: !prev[id] }));
@@ -359,6 +365,73 @@ export default function InspectorPanel() {
                   </div>
                 </div>
               </div>
+
+              {/* Transition Settings Section */}
+              {associatedTransitions.length > 0 && (
+                <div className="inspector-section" style={{ borderLeft: '3px solid var(--accent, #ec4899)', background: 'rgba(236, 72, 153, 0.05)', borderRadius: '4px', padding: '10px' }}>
+                  <span className="inspector-title" style={{ color: 'var(--accent, #ec4899)', display: 'block', marginBottom: '8px' }}>🎬 Transition Settings</span>
+                  {associatedTransitions.map(trans => {
+                    const isOutgoing = trans.clipAId === clip.id;
+                    const otherClip = clips.find(c => c.id === (isOutgoing ? trans.clipBId : trans.clipAId));
+                    return (
+                      <div key={trans.id} className="transition-inspector-item" style={{ marginTop: '8px', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '8px' }}>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '8px', color: 'var(--text-light)' }}>
+                          {isOutgoing ? `Outgoing to: ${otherClip?.name || 'Next Clip'}` : `Incoming from: ${otherClip?.name || 'Previous Clip'}`}
+                        </div>
+
+                        {/* Transition Type dropdown */}
+                        <div className="form-group" style={{ marginBottom: '8px' }}>
+                          <span className="form-label">Type:</span>
+                          <select 
+                            className="form-input-text"
+                            value={trans.type}
+                            onChange={(e) => updateTransition(trans.id, { type: e.target.value })}
+                          >
+                            <option value="crossDissolve">Cross Dissolve</option>
+                            <option value="dipToBlack">Dip to Black</option>
+                            <option value="dipToWhite">Dip to White</option>
+                            <option value="additiveDissolve">Additive Dissolve</option>
+                            <option value="wipeLeft">Wipe Left</option>
+                            <option value="wipeRight">Wipe Right</option>
+                            <option value="wipeUp">Wipe Up</option>
+                            <option value="wipeDown">Wipe Down</option>
+                            <option value="clockWipe">Clock Wipe</option>
+                            <option value="pushLeft">Push Left</option>
+                            <option value="pushRight">Push Right</option>
+                            <option value="slideIn">Slide In</option>
+                            <option value="zoomIn">Zoom In</option>
+                          </select>
+                        </div>
+
+                        {/* Transition Duration slider */}
+                        <div className="form-group" style={{ marginBottom: '10px' }}>
+                          <span className="form-label">Duration:</span>
+                          <div className="form-control-slider">
+                            <input 
+                              type="range" 
+                              min={0.1} 
+                              max={5.0} 
+                              step={0.1} 
+                              value={trans.duration} 
+                              onChange={(e) => updateTransition(trans.id, { duration: parseFloat(e.target.value) })}
+                            />
+                            <span>{trans.duration.toFixed(1)}s</span>
+                          </div>
+                        </div>
+
+                        {/* Delete Transition */}
+                        <button 
+                          className="btn btn-danger" 
+                          style={{ width: '100%', padding: '4px', fontSize: '0.68rem', marginTop: '4px' }}
+                          onClick={() => removeTransition(trans.id)}
+                        >
+                          Remove Transition
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* Timing & Precision Trim Controls */}
               <div className="inspector-section">

@@ -14,7 +14,15 @@ export default function TimelinePanel() {
     tool, setTool,
     timelineDuration,
     looping, loopStart, loopEnd,
-    rippleTrim, rollEdit, slipClip, slideClip, addSubtitleClip
+    rippleTrim, rollEdit, slipClip, slideClip, addSubtitleClip,
+    // Cut Page features
+    smartInsert, appendAtEnd, placeOnTop, rippleOverwrite, sourceOverwrite, closeUpEdit,
+    transitions, addTransition,
+    analysisHighlights, analyzeBoringShots, clearAnalysis,
+    boringThreshold, setBoringThreshold, jumpCutThreshold, setJumpCutThreshold,
+    boringDetectorOpen, setBoringDetectorOpen,
+    abTrimEditorOpen, setAbTrimEditorOpen, abTrimEditPoint, setAbTrimEditPoint,
+    fps
   } = useContext(EditorContext);
 
   const scrollContainerRef = useRef(null);
@@ -45,6 +53,39 @@ export default function TimelinePanel() {
     const relativeX = clientX - rect.left + scrollLeft - 140; // subtract track header width
     const targetTime = Math.max(0, pxToSec(relativeX));
     setPlayhead(Math.min(timelineDuration, targetTime));
+  };
+
+  const updatePlayheadFromOverviewX = (clientX) => {
+    const bodyEl = document.querySelector('.timeline-overview-body');
+    if (!bodyEl) return;
+    const bodyRect = bodyEl.getBoundingClientRect();
+    const clickX = clientX - bodyRect.left;
+    const percentage = Math.max(0, Math.min(1, clickX / (bodyRect.width || 1)));
+    const newPlayhead = percentage * timelineDuration;
+    setPlayhead(newPlayhead);
+    
+    // Auto-scroll the main timeline container to keep playhead visible/centered
+    if (scrollContainerRef.current) {
+      const scrollPos = secToPx(newPlayhead) + 140 - scrollContainerRef.current.clientWidth / 2;
+      scrollContainerRef.current.scrollLeft = Math.max(0, scrollPos);
+    }
+  };
+
+  const handleOverviewMouseDown = (e) => {
+    e.preventDefault();
+    updatePlayheadFromOverviewX(e.clientX);
+    
+    const handleMouseMove = (moveEvent) => {
+      updatePlayheadFromOverviewX(moveEvent.clientX);
+    };
+    
+    const handleMouseUp = () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+    
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
   };
 
   useEffect(() => {
@@ -370,6 +411,59 @@ export default function TimelinePanel() {
           </button>
         </div>
 
+        {/* Smart Edit Toolbar - Cut Page */}
+        <div className="smart-edit-toolbar">
+          <span className="smart-edit-label">CUT</span>
+          <button className="smart-edit-btn" onClick={smartInsert} title="Smart Insert (W) — Insert at nearest edit point, ripple">
+            <span className="btn-icon">⤵</span>Smart Insert
+          </button>
+          <button className="smart-edit-btn" onClick={appendAtEnd} title="Append at End (E) — Add to timeline tail">
+            <span className="btn-icon">⏭</span>Append
+          </button>
+          <button className="smart-edit-btn" onClick={placeOnTop} title="Place on Top (Q) — Drop on upper track at playhead">
+            <span className="btn-icon">⬆</span>On Top
+          </button>
+          <button className="smart-edit-btn" onClick={rippleOverwrite} title="Ripple Overwrite — Replace clip, ripple if duration differs">
+            <span className="btn-icon">🔄</span>Ripple OW
+          </button>
+          <button className="smart-edit-btn" onClick={sourceOverwrite} title="Source Overwrite — Sync cutaway on track above">
+            <span className="btn-icon">🎬</span>Src OW
+          </button>
+          <button className="smart-edit-btn" onClick={closeUpEdit} title="Close Up — 2× zoom crop on selected clip">
+            <span className="btn-icon">🔍</span>Close Up
+          </button>
+          <div className="smart-edit-separator" />
+          <button 
+            className={`smart-edit-btn detector-btn ${boringDetectorOpen ? 'active' : ''}`}
+            onClick={() => setBoringDetectorOpen(!boringDetectorOpen)} 
+            title="Boring Shot / Jump Cut Detector"
+          >
+            <span className="btn-icon">📊</span>Detect
+          </button>
+        </div>
+
+        {/* Boring Detector Modal */}
+        {boringDetectorOpen && (
+          <div className="boring-detector-modal">
+            <div className="boring-detector-header">
+              <span>🔍 Shot Analyzer</span>
+              <button className="boring-detector-close" onClick={() => setBoringDetectorOpen(false)}>✕</button>
+            </div>
+            <div className="boring-detector-row">
+              <label>Max duration (boring): <strong>{boringThreshold}s</strong></label>
+              <input type="range" min={2} max={30} value={boringThreshold} onChange={e => setBoringThreshold(Number(e.target.value))} />
+            </div>
+            <div className="boring-detector-row">
+              <label>Min frames (jump cut): <strong>{jumpCutThreshold}</strong></label>
+              <input type="range" min={1} max={30} value={jumpCutThreshold} onChange={e => setJumpCutThreshold(Number(e.target.value))} />
+            </div>
+            <div className="boring-detector-actions">
+              <button className="btn btn-primary" onClick={analyzeBoringShots}>Analyze</button>
+              <button className="btn btn-secondary" onClick={clearAnalysis}>Clear</button>
+            </div>
+          </div>
+        )}
+
         {/* Zoom slider */}
         <div className="timeline-scale-slider">
           <span>Zoom:</span>
@@ -380,6 +474,47 @@ export default function TimelinePanel() {
             value={zoom} 
             onChange={(e) => setZoom(parseInt(e.target.value))}
           />
+        </div>
+      </div>
+
+      {/* === DUAL TIMELINE: Upper Overview Minimap === */}
+      <div className="timeline-overview">
+        <div className="timeline-overview-label">OVERVIEW</div>
+        <div 
+          className="timeline-overview-body"
+          onMouseDown={handleOverviewMouseDown}
+        >
+          {/* Render all clips as proportional rectangles */}
+          {clips.map(clip => {
+            const totalDur = Math.max(timelineDuration, 1);
+            const trackIdx = tracks.findIndex(t => t.id === clip.trackId);
+            const leftPct = (clip.timelinePos / totalDur) * 100;
+            const widthPct = (clip.duration / totalDur) * 100;
+            const topPx = trackIdx * 6;
+            const highlight = analysisHighlights.find(h => h.clipId === clip.id);
+            let overviewClass = `overview-clip ${clip.mediaType}`;
+            if (highlight) overviewClass += highlight.type === 'boring' ? ' boring-highlight' : ' jumpcut-highlight';
+            return (
+              <div
+                key={clip.id}
+                className={overviewClass}
+                style={{ left: `${leftPct}%`, width: `${Math.max(widthPct, 0.3)}%`, top: `${topPx}px` }}
+                onClick={() => {
+                  setPlayhead(clip.timelinePos);
+                  setSelectedClipId(clip.id);
+                }}
+              />
+            );
+          })}
+          {/* Playhead indicator */}
+          <div className="overview-playhead" style={{ left: `${(playhead / Math.max(timelineDuration, 1)) * 100}%` }} />
+          {/* Viewport window showing visible range */}
+          {scrollContainerRef.current && (
+            <div className="overview-viewport" style={{
+              left: `${((scrollContainerRef.current.scrollLeft / (secToPx(timelineDuration) + 140)) * 100)}%`,
+              width: `${((scrollContainerRef.current.clientWidth / (secToPx(timelineDuration) + 140)) * 100)}%`
+            }} />
+          )}
         </div>
       </div>
 
@@ -468,6 +603,8 @@ export default function TimelinePanel() {
                     const left = secToPx(clip.timelinePos);
                     const width = secToPx(clip.duration);
                     const isSelected = selectedClipId === clip.id;
+                    const highlight = analysisHighlights.find(h => h.clipId === clip.id);
+                    const transitionAtEnd = transitions.find(t => t.clipAId === clip.id);
 
                     // Gather unique keyframe times to render them as diamonds
                     const kfTimes = [];
@@ -485,9 +622,17 @@ export default function TimelinePanel() {
                     return (
                       <div
                         key={clip.id}
-                        className={`timeline-clip ${clip.mediaType} ${isSelected ? 'selected' : ''}`}
+                        className={`timeline-clip ${clip.mediaType} ${isSelected ? 'selected' : ''} ${highlight ? (highlight.type === 'boring' ? 'clip-boring-highlight' : 'clip-jumpcut-highlight') : ''}`}
                         style={{ left: `${left}px`, width: `${width}px` }}
                         onMouseDown={(e) => handleClipMouseDown(e, clip, 'move')}
+                        onDoubleClick={() => {
+                          // Double-click on edit point opens A/B trim editor
+                          const succeeding = clips.find(c => c.trackId === clip.trackId && Math.abs(c.timelinePos - (clip.timelinePos + clip.duration)) < 0.15);
+                          if (succeeding) {
+                            setAbTrimEditPoint({ clipAId: clip.id, clipBId: succeeding.id });
+                            setAbTrimEditorOpen(true);
+                          }
+                        }}
                         onMouseMove={(e) => {
                           if (tool !== 'trim') return;
                           const rect = e.currentTarget.getBoundingClientRect();
@@ -522,6 +667,13 @@ export default function TimelinePanel() {
                               onMouseDown={(e) => handleClipMouseDown(e, clip, 'trim-right')}
                             />
                           </>
+                        )}
+
+                        {/* Transition indicator at clip end */}
+                        {transitionAtEnd && (
+                          <div className="clip-transition-indicator" title={`${transitionAtEnd.type} (${transitionAtEnd.duration.toFixed(1)}s)`}>
+                            <span>⟡</span>
+                          </div>
                         )}
 
                         <div className="clip-label-container">

@@ -13,7 +13,9 @@ export default function MediaBrowser() {
     setSourcePlayhead,
     setSourceIn,
     setSourceOut,
-    setSourcePlaying
+    setSourcePlaying,
+    sourceTapeMode,
+    setSourceTapeMode
   } = useContext(EditorContext);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -206,6 +208,15 @@ export default function MediaBrowser() {
           style={{ width: '100%', marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '0.8rem', padding: '8px' }}
         >
           ⚡ New Adjustment Clip
+        </button>
+
+        {/* Source Tape Mode Toggle */}
+        <button 
+          className={`btn ${sourceTapeMode ? 'btn-primary active' : 'btn-secondary'}`}
+          onClick={() => setSourceTapeMode(!sourceTapeMode)}
+          style={{ width: '100%', marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '0.8rem', padding: '8px' }}
+        >
+          📼 {sourceTapeMode ? 'Source Tape: Active' : 'Source Tape Mode'}
         </button>
 
         {/* Search Bar */}

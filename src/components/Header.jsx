@@ -4,7 +4,8 @@ import { EditorContext } from '../context/EditorContext';
 export default function Header({ onOpenExport, onOpenHelp }) {
   const { 
     undo, redo, undoStack, redoStack, 
-    clips, setClips, tracks, setTracks, setSelectedClipId, setSelectedTrackId, setPlayhead
+    clips, setClips, tracks, setTracks, setSelectedClipId, setSelectedTrackId, setPlayhead,
+    transitionsPanelOpen, setTransitionsPanelOpen
   } = useContext(EditorContext);
   
   const [activeMenu, setActiveMenu] = useState(null);
@@ -145,6 +146,16 @@ export default function Header({ onOpenExport, onOpenHelp }) {
               </button>
             </div>
           )}
+        </div>
+
+        {/* Transitions Menu Toggle */}
+        <div className="menu-item">
+          <button 
+            className={`menu-button ${transitionsPanelOpen ? 'active' : ''}`}
+            onClick={() => { setTransitionsPanelOpen(!transitionsPanelOpen); setActiveMenu(null); }}
+          >
+            Transitions
+          </button>
         </div>
 
         {/* Export Menu */}

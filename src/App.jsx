@@ -6,6 +6,7 @@ import PreviewPanel from './components/PreviewPanel';
 import InspectorPanel from './components/InspectorPanel';
 import TimelinePanel from './components/TimelinePanel';
 import ExportDialog from './components/ExportDialog';
+import TransitionsPanel from './components/TransitionsPanel';
 
 function App() {
   const [isExportOpen, setIsExportOpen] = useState(false);
@@ -30,6 +31,9 @@ function App() {
 
           {/* Right panel: Sliders & Effects stack */}
           <InspectorPanel />
+
+          {/* Transitions panel slideout */}
+          <TransitionsPanel />
         </div>
 
         {/* Bottom panel: Tracks timeline ruler */}
@@ -57,6 +61,7 @@ function App() {
                   <strong>Home / End</strong> <span>Jump to timeline start / end</span>
                   <strong>[ / ]</strong> <span>Mark Source In / Out points</span>
                   <strong>F9 / F10</strong> <span>Insert Edit / Overwrite Edit</span>
+                  <strong>W / E / Q</strong> <span>Smart Insert / Append / Place on Top</span>
                   <strong>I / O</strong> <span>Mark loop region start / end</span>
                   <strong>Del / Backspace</strong><span>Delete selected clip</span>
                   <strong>Ctrl+Z / Y</strong> <span>Undo / Redo (50 levels)</span>
@@ -68,6 +73,8 @@ function App() {
                   <ul style={{ paddingLeft: '16px', marginTop: '4px' }}>
                     <li>Double-click assets in the Media Browser to load them in the **Source Monitor** (Dual View).</li>
                     <li>Mark In/Out bounds on the source, then press **F9** (Insert) or **F10** (Overwrite) to load onto the active track.</li>
+                    <li>Press **W** (Smart Insert), **E** (Append at End), or **Q** (Place on Top) to trigger Cut Page actions instantly.</li>
+                    <li>Toggle the **Transitions** menu in the header and drag transitions (e.g. Cross Dissolve, Clock Wipe, Push) onto clip junctions to blend them.</li>
                     <li>In **Smart Trim Mode (T)**, click-and-drag different zones of a clip: left/right edges for **Ripple Trim** / **Roll Edit**, center area for **Slip** / **Slide**.</li>
                     <li>Create and place a **⚡ Adjustment Clip** to apply filters (Color Grade, Blur) to all video tracks underneath.</li>
                   </ul>

@@ -3,7 +3,7 @@ import { EditorContext } from '../context/EditorContext';
 import { compositeTimelineFrame, triggerAudioTimelineTick } from '../utils/mediaRenderer';
 
 export default function ExportDialog({ isOpen, onClose }) {
-  const { clips, tracks, mediaLibrary, getInterpolatedValue, timelineDuration, fps: defaultFps } = useContext(EditorContext);
+  const { clips, transitions, tracks, mediaLibrary, getInterpolatedValue, timelineDuration, fps: defaultFps } = useContext(EditorContext);
   
   const [resolution, setResolution] = useState('1920x1080');
   const [format, setFormat] = useState('video/webm');
@@ -16,14 +16,25 @@ export default function ExportDialog({ isOpen, onClose }) {
 
   if (!isOpen) return null;
 
-  const handleExport = async () => {
+  const triggerPreset = (res, fmt, rate) => {
+    setResolution(res);
+    setFormat(fmt);
+    setFps(rate);
+    handleExport({ resolution: res, format: fmt, fps: rate });
+  };
+
+  const handleExport = async (overrideSettings = null) => {
     setExporting(true);
     setProgress(0);
     setStatusText('Preparing renderer streams...');
     cancelRef.current = false;
 
+    const exportRes = overrideSettings?.resolution || resolution;
+    const exportFormat = overrideSettings?.format || format;
+    const exportFps = overrideSettings?.fps || fps;
+
     try {
-      const [widthStr, heightStr] = resolution.split('x');
+      const [widthStr, heightStr] = exportRes.split('x');
       const w = parseInt(widthStr);
       const h = parseInt(heightStr);
 
@@ -33,7 +44,7 @@ export default function ExportDialog({ isOpen, onClose }) {
       exportCanvas.height = h;
 
       // Set up Canvas Capture Stream
-      const canvasStream = exportCanvas.captureStream(fps);
+      const canvasStream = exportCanvas.captureStream(exportFps);
       
       // Setup audio capture via Web Audio (if supported)
       let combinedStream = canvasStream;
@@ -57,11 +68,11 @@ export default function ExportDialog({ isOpen, onClose }) {
       }
 
       // Determine mimeType compatibility
-      let mimeType = format;
-      if (format === 'video/webm' && !MediaRecorder.isTypeSupported(format)) {
+      let mimeType = exportFormat;
+      if (exportFormat === 'video/webm' && !MediaRecorder.isTypeSupported(exportFormat)) {
         mimeType = 'video/webm;codecs=vp8';
       }
-      if (format === 'video/mp4' && !MediaRecorder.isTypeSupported(format)) {
+      if (exportFormat === 'video/mp4' && !MediaRecorder.isTypeSupported(exportFormat)) {
         // Fallback to webm if MP4 isn't supported natively by MediaRecorder (common in Chrome/Firefox)
         mimeType = 'video/webm';
       }
@@ -82,12 +93,12 @@ export default function ExportDialog({ isOpen, onClose }) {
         }
 
         setStatusText('Saving exported clip...');
-        const blob = new Blob(chunks, { type: format === 'video/mp4' ? 'video/mp4' : 'video/webm' });
+        const blob = new Blob(chunks, { type: exportFormat === 'video/mp4' ? 'video/mp4' : 'video/webm' });
         const downloadUrl = URL.createObjectURL(blob);
         
         const link = document.createElement('a');
         link.href = downloadUrl;
-        link.download = format === 'video/mp4' ? 'editfree_render.mp4' : 'editfree_render.webm';
+        link.download = exportFormat === 'video/mp4' ? 'editfree_render.mp4' : 'editfree_render.webm';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -105,7 +116,7 @@ export default function ExportDialog({ isOpen, onClose }) {
       recorder.start();
 
       // Render loop frame-by-frame
-      const frameDuration = 1 / fps;
+      const frameDuration = 1 / exportFps;
       let currentTime = 0;
       
       const renderFrame = () => {
@@ -125,6 +136,7 @@ export default function ExportDialog({ isOpen, onClose }) {
           displayCanvas: exportCanvas,
           playheadTime: currentTime,
           clips,
+          transitions,
           tracks,
           mediaLibrary,
           getInterpolatedValue
@@ -217,6 +229,41 @@ export default function ExportDialog({ isOpen, onClose }) {
 
         {!exporting ? (
           <div className="modal-body">
+            {/* Quick Export Presets Section */}
+            <div className="quick-export-presets">
+              <span className="form-label" style={{ marginBottom: '10px', display: 'block', fontWeight: 'bold', color: 'var(--text-light)' }}>Quick Export Presets:</span>
+              <div className="preset-buttons-grid">
+                <button className="preset-btn" onClick={() => triggerPreset('1920x1080', 'video/mp4', 30)}>
+                  <span className="preset-icon">📺</span>
+                  <div className="preset-details">
+                    <span className="preset-name">YouTube 1080p</span>
+                    <span className="preset-meta">MP4 • 30fps</span>
+                  </div>
+                </button>
+                <button className="preset-btn" onClick={() => triggerPreset('1280x720', 'video/mp4', 30)}>
+                  <span className="preset-icon">🐦</span>
+                  <div className="preset-details">
+                    <span className="preset-name">Twitter / X</span>
+                    <span className="preset-meta">MP4 • 30fps</span>
+                  </div>
+                </button>
+                <button className="preset-btn" onClick={() => triggerPreset('720x1280', 'video/mp4', 30)}>
+                  <span className="preset-icon">📱</span>
+                  <div className="preset-details">
+                    <span className="preset-name">Instagram Reels</span>
+                    <span className="preset-meta">MP4 • 30fps</span>
+                  </div>
+                </button>
+                <button className="preset-btn" onClick={() => triggerPreset('1920x1080', 'video/webm', 60)}>
+                  <span className="preset-icon">⭐</span>
+                  <div className="preset-details">
+                    <span className="preset-name">ProRes Master</span>
+                    <span className="preset-meta">WebM • 60fps</span>
+                  </div>
+                </button>
+              </div>
+            </div>
+            <hr className="presets-separator" />
             {/* Presets */}
             <div className="form-group">
               <span className="form-label">Resolution Preset:</span>
