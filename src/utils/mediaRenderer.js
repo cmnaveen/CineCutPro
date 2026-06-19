@@ -343,6 +343,223 @@ const renderClipToCanvas = (clip, playheadTime, targetCanvas, targetCtx, width, 
 
       clipCtx.restore();
 
+    } else if (textEffect === 'glass') {
+      // 7. PREMIUM CRYSTAL GLASS EFFECT (Apple-style PBR-inspired transparent glass)
+      // Letters are modelled as thick crystal that refracts the LIVE background
+      // through their shape, with polished beveled edges, Fresnel rim light,
+      // chromatic dispersion, multi-directional studio speculars, ambient-occlusion
+      // contact shadow and internal caustic shimmer. Every optical cue is faked with
+      // layered canvas compositing (no per-pixel raytrace) so playback stays real-time
+      // while the result reads as a ray-traced glass advertising render.
+      const cx = textX;
+      const cy = textY;
+      const fs = fontSizeVal;
+      const tw = clipCtx.measureText(textStr).width;
+      const halfW = Math.min(width * 0.46, tw / 2 + fs * 0.18);
+
+      // --- Build a crisp, slightly fattened & rounded letter-shape mask ---
+      // Round line joins give the chunky cast-glass corners; this mask clips
+      // every optical layer so the glass silhouette stays sharp.
+      const { canvas: maskCanvas, ctx: maskCtx } = getOffscreenCanvas('glassMask_' + clip.id, width, height);
+      maskCtx.clearRect(0, 0, width, height);
+      maskCtx.font = clipCtx.font;
+      maskCtx.textAlign = 'center';
+      maskCtx.textBaseline = 'middle';
+      maskCtx.lineJoin = 'round';
+      maskCtx.lineWidth = Math.max(2, fs * 0.04);
+      maskCtx.strokeStyle = '#fff';
+      maskCtx.fillStyle = '#fff';
+      maskCtx.strokeText(textStr, cx, cy);
+      maskCtx.fillText(textStr, cx, cy);
+
+      // ===== 1. AMBIENT OCCLUSION / CONTACT SHADOW =====
+      // Soft dark halo grounding the glass onto the scene. Drawn first; its solid
+      // body is later covered by the refraction, leaving only the soft edge halo.
+      clipCtx.save();
+      clipCtx.shadowColor = 'rgba(4, 9, 18, 0.55)';
+      clipCtx.shadowBlur = Math.max(12, fs * 0.22);
+      clipCtx.shadowOffsetX = fs * 0.045;
+      clipCtx.shadowOffsetY = fs * 0.075;
+      clipCtx.fillStyle = 'rgba(0, 0, 0, 0.30)';
+      clipCtx.fillText(textStr, cx, cy);
+      clipCtx.restore();
+
+      // ===== 2. REFRACTED BACKGROUND (the core see-through optics) =====
+      // The already-composited scene behind the text is magnified like a thick
+      // lens and rolled downward, then clipped to the letters so the background
+      // stays fully visible but is clearly bent and displaced by the glass body.
+      const { canvas: refrCanvas, ctx: refrCtx } = getOffscreenCanvas('glassRefr_' + clip.id, width, height);
+      refrCtx.clearRect(0, 0, width, height);
+      const mag = 1.3; // thick-glass magnification
+      refrCtx.save();
+      refrCtx.translate(cx, cy);
+      refrCtx.scale(mag, mag);
+      refrCtx.translate(-cx, -cy);
+      refrCtx.drawImage(targetCanvas, fs * 0.03, -fs * 0.18); // visible refractive roll
+      refrCtx.restore();
+      // Faint inverted sliver near the lower thickness edge sells the glass depth.
+      refrCtx.save();
+      refrCtx.globalAlpha = 0.20;
+      refrCtx.translate(cx, cy);
+      refrCtx.scale(mag * 1.08, -(mag * 1.08)); // vertical flip
+      refrCtx.translate(-cx, -cy);
+      refrCtx.drawImage(targetCanvas, 0, fs * 0.55);
+      refrCtx.restore();
+      // Clip the whole refraction to the letter shape and lay it into the glass.
+      refrCtx.globalCompositeOperation = 'destination-in';
+      refrCtx.drawImage(maskCanvas, 0, 0);
+      refrCtx.globalCompositeOperation = 'source-over';
+      clipCtx.drawImage(refrCanvas, 0, 0);
+
+      // ===== 2b. EDGE LENSING (total-internal-reflection rim of thick glass) =====
+      // Near a thick chamfer the scene is bent far harder and brightens. We sample
+      // a strongly-magnified, offset copy of the background and confine it to a thin
+      // band hugging the inner contour — the signature glossy bent edge of cast glass.
+      const { canvas: bandMask, ctx: bandCtx } = getOffscreenCanvas('glassBand_' + clip.id, width, height);
+      bandCtx.clearRect(0, 0, width, height);
+      bandCtx.font = clipCtx.font;
+      bandCtx.textAlign = 'center';
+      bandCtx.textBaseline = 'middle';
+      bandCtx.lineJoin = 'round';
+      bandCtx.strokeStyle = '#fff';
+      bandCtx.lineWidth = Math.max(3, fs * 0.13); // band straddling the outline
+      bandCtx.strokeText(textStr, cx, cy);
+      bandCtx.globalCompositeOperation = 'destination-in'; // keep only the inner half
+      bandCtx.drawImage(maskCanvas, 0, 0);
+
+      const { canvas: edgeCanvas, ctx: edgeCtx } = getOffscreenCanvas('glassEdge_' + clip.id, width, height);
+      edgeCtx.clearRect(0, 0, width, height);
+      const emag = mag * 1.55;
+      edgeCtx.save();
+      edgeCtx.translate(cx, cy);
+      edgeCtx.scale(emag, emag);
+      edgeCtx.translate(-cx, -cy);
+      edgeCtx.drawImage(targetCanvas, fs * 0.05, -fs * 0.2); // hard, offset bend
+      edgeCtx.restore();
+      edgeCtx.globalCompositeOperation = 'destination-in';
+      edgeCtx.drawImage(bandMask, 0, 0);
+      edgeCtx.globalCompositeOperation = 'source-over';
+      clipCtx.save();
+      clipCtx.globalAlpha = 0.85;
+      clipCtx.drawImage(edgeCanvas, 0, 0);
+      clipCtx.restore();
+
+      // ===== 3. SURFACE TREATMENT BUFFER =====
+      // Body tint, bevels, Fresnel rim, dispersion, speculars and caustics are
+      // built on a dedicated buffer, masked to the letters, then laid over the
+      // refraction. This keeps the contact shadow pristine and the glass crisp.
+      const { canvas: glassCanvas, ctx: gctx } = getOffscreenCanvas('glassSurf_' + clip.id, width, height);
+      gctx.clearRect(0, 0, width, height);
+      gctx.font = clipCtx.font;
+      gctx.textAlign = 'center';
+      gctx.textBaseline = 'middle';
+      gctx.lineJoin = 'round';
+
+      // 3a. Glass body — a whisper of cool crystal tint + brightness lift so the
+      //     material has body without ever looking like flat plastic.
+      const bodyGrad = gctx.createLinearGradient(0, cy - fs * 0.62, 0, cy + fs * 0.62);
+      bodyGrad.addColorStop(0.00, 'rgba(214, 240, 255, 0.12)'); // cool sky pickup top
+      bodyGrad.addColorStop(0.46, 'rgba(255, 255, 255, 0.03)');
+      bodyGrad.addColorStop(0.54, 'rgba(120, 150, 175, 0.03)');
+      bodyGrad.addColorStop(1.00, 'rgba(182, 208, 228, 0.10)'); // cool floor pickup bottom
+      gctx.fillStyle = bodyGrad;
+      gctx.fillText(textStr, cx, cy);
+      if (textColor && textColor !== '#ffffff') {
+        // Honour a user-chosen tint as faintly coloured crystal.
+        gctx.save();
+        gctx.globalAlpha = 0.11;
+        gctx.fillStyle = textColor;
+        gctx.fillText(textStr, cx, cy);
+        gctx.restore();
+      }
+
+      // 3b. Polished inner bevel — light from the top-left, shadow to the
+      //     bottom-right, built from inset strokes for a smooth chamfer & thickness.
+      const bevelSteps = 5;
+      for (let i = bevelSteps; i >= 1; i--) {
+        const t = i / bevelSteps;
+        gctx.lineWidth = Math.max(1, fs * 0.05 * t);
+        gctx.globalCompositeOperation = 'lighter';
+        gctx.strokeStyle = `rgba(255, 255, 255, ${0.10 * (1 - t) + 0.04})`;
+        gctx.strokeText(textStr, cx - fs * 0.013, cy - fs * 0.013);
+        gctx.globalCompositeOperation = 'source-over';
+        gctx.strokeStyle = `rgba(9, 18, 30, ${0.10 * (1 - t) + 0.05})`;
+        gctx.strokeText(textStr, cx + fs * 0.013, cy + fs * 0.013);
+      }
+
+      // 3c. Chromatic dispersion — R/G/B fringes split at the glass edges.
+      gctx.globalCompositeOperation = 'lighter';
+      const disp = Math.max(1, fs * 0.014);
+      gctx.lineWidth = Math.max(1, fs * 0.012);
+      gctx.strokeStyle = 'rgba(255, 45, 45, 0.50)'; // red, one side
+      gctx.strokeText(textStr, cx + disp, cy + disp * 0.4);
+      gctx.strokeStyle = 'rgba(45, 140, 255, 0.50)'; // blue, opposite side
+      gctx.strokeText(textStr, cx - disp, cy - disp * 0.4);
+      gctx.strokeStyle = 'rgba(60, 255, 120, 0.26)'; // green to complete the spectrum
+      gctx.strokeText(textStr, cx, cy + disp);
+
+      // 3d. Fresnel edge brightening — a crisp rim hugging the contour, stronger
+      //     at the top where the key light grazes the glass.
+      const rimGrad = gctx.createLinearGradient(0, cy - fs * 0.6, 0, cy + fs * 0.6);
+      rimGrad.addColorStop(0.0, 'rgba(255, 255, 255, 0.95)');
+      rimGrad.addColorStop(0.5, 'rgba(208, 234, 255, 0.50)');
+      rimGrad.addColorStop(1.0, 'rgba(255, 255, 255, 0.82)');
+      gctx.strokeStyle = rimGrad;
+      gctx.lineWidth = Math.max(1.5, fs * 0.022);
+      gctx.strokeText(textStr, cx, cy);
+
+      // 3e. Soft studio speculars — a broad key-light gloss sweep across the
+      //     upper body plus a few crisp hotspots from multiple light directions.
+      const sweep = gctx.createLinearGradient(0, cy - fs * 0.58, 0, cy - fs * 0.04);
+      sweep.addColorStop(0, 'rgba(255, 255, 255, 0.42)');
+      sweep.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      gctx.fillStyle = sweep;
+      gctx.fillRect(cx - halfW, cy - fs * 0.6, halfW * 2, fs * 0.58);
+      const spots = [
+        [cx - halfW * 0.55, cy - fs * 0.34, fs * 0.11, 0.90],
+        [cx + halfW * 0.22, cy - fs * 0.30, fs * 0.075, 0.80],
+        [cx + halfW * 0.60, cy + fs * 0.12, fs * 0.055, 0.60],
+        [cx - halfW * 0.15, cy + fs * 0.26, fs * 0.045, 0.45],
+      ];
+      spots.forEach(([sx, sy, r, a]) => {
+        const g = gctx.createRadialGradient(sx, sy, 0, sx, sy, r);
+        g.addColorStop(0, `rgba(255, 255, 255, ${a})`);
+        g.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        gctx.fillStyle = g;
+        gctx.beginPath();
+        gctx.arc(sx, sy, r, 0, Math.PI * 2);
+        gctx.fill();
+      });
+
+      // 3f. Internal reflections / caustic shimmer — faint light caustics curving
+      //     through the glass body.
+      gctx.strokeStyle = 'rgba(190, 225, 255, 0.16)';
+      gctx.lineWidth = Math.max(1, fs * 0.012);
+      for (let k = 0; k < 3; k++) {
+        const yy = cy - fs * 0.18 + k * fs * 0.17;
+        gctx.beginPath();
+        gctx.moveTo(cx - halfW, yy);
+        gctx.bezierCurveTo(cx - halfW * 0.3, yy - fs * 0.08, cx + halfW * 0.3, yy + fs * 0.08, cx + halfW, yy);
+        gctx.stroke();
+      }
+      gctx.globalCompositeOperation = 'source-over';
+
+      // Mask all surface treatment to the letter shape and lay it over the glass.
+      gctx.globalCompositeOperation = 'destination-in';
+      gctx.drawImage(maskCanvas, 0, 0);
+      gctx.globalCompositeOperation = 'source-over';
+      clipCtx.drawImage(glassCanvas, 0, 0);
+
+      // ===== 4. OUTER FRESNEL HALO — subtle edge light catch (no exaggerated glow) =====
+      clipCtx.save();
+      clipCtx.globalCompositeOperation = 'lighter';
+      clipCtx.shadowColor = 'rgba(180, 220, 255, 0.5)';
+      clipCtx.shadowBlur = Math.max(4, fs * 0.06);
+      clipCtx.strokeStyle = 'rgba(220, 240, 255, 0.35)';
+      clipCtx.lineWidth = Math.max(1, fs * 0.012);
+      clipCtx.strokeText(textStr, cx, cy);
+      clipCtx.restore();
+
     } else {
       // DEFAULT STYLE (Subtle shadow, solid color fill)
       clipCtx.fillStyle = textColor;

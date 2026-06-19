@@ -220,6 +220,7 @@ export default function InspectorPanel() {
                       <option value="glitch">⚡ Cyberpunk Glitch</option>
                       <option value="gold">🏆 Golden Luxury</option>
                       <option value="grunge">🛹 Distressed Grunge</option>
+                      <option value="glass">🔮 Crystal Glass (Refraction)</option>
                     </select>
                   </div>
                 </div>
