@@ -171,6 +171,7 @@ clips          [ { id, trackId, mediaId, start, end, srcIn, srcOut, transform, f
                    audio, transitions, keyframes, title, kind } ]
 transitions    [ ]                  // standalone markers (clips also carry transitions.in/out)
 playhead       0                    // volatile
+seekId         0                    // volatile; bumped on user seeks (renderer-clock guard)
 playing        false                // volatile
 playbackRate   1                    // sign = direction; magnitude via JKL ladder (1/2/4)
 jklIndex       0                    // 0..2 ladder index
@@ -202,7 +203,7 @@ All actions dispatched through the single reducer. **Bold** = recorded in undo h
 **Clips:** **`clip/insertFromMedia`**, **`clip/insertTitle`**, **`clip/move`**, **`clip/trim`**, **`clip/blade`**, **`clip/delete`** (`{ ripple? }`), **`clip/duplicate`**, **`clip/update`**, **`clip/updateTransform`**, **`clip/updateFilters`**, **`clip/updateAudio`**, **`clip/updateTitle`**, **`clip/addKeyframe`**, **`clip/clearKeyframes`**
 **Transitions:** **`transition/apply`** (`{ clipId, side, kind, duration }`), **`transition/clear`**
 **Selection:** `select/clips`, `select/inspectorTab`
-**Playback:** `playback/setPlayhead`, `playback/togglePlay`, `playback/play`, `playback/pause`, `playback/jklForward`, `playback/jklReverse`, `playback/stop`, `playback/markIn`, `playback/markOut`, `playback/clearMarks`, `playback/toggleLoop`, `playback/setZoom`, `playback/toggleSnap`
+**Playback:** `playback/setPlayhead` (user seek; bumps `seekId`), `playback/tickPlayhead` (renderer-clock echo; volatile, no `seekId` bump), `playback/togglePlay`, `playback/play`, `playback/pause`, `playback/jklForward`, `playback/jklReverse`, `playback/stop`, `playback/markIn`, `playback/markOut`, `playback/clearMarks`, `playback/toggleLoop`, `playback/setZoom`, `playback/toggleSnap`
 **Master:** `master/setVolume`, `master/toggleSafeZones`
 **UI:** `ui/toggle`, `ui/set`, `ui/openTrimEditor`, `ui/openContextMenu`, `ui/closeContextMenu`, `ui/rubberBand`
 **Analyzer:** `analyzer/setThresholds`
@@ -312,6 +313,7 @@ Prioritized backlog. Check items off and move them to the [Changelog](#changelog
 - [ ] **Audio in export.** Verify/ensure the `MediaRecorder` stream muxes the Web Audio master output alongside `canvas.captureStream()` (mixed `MediaStream`).
 
 ### P2 — polish & UX
+- [ ] **Eliminate the residual playback re-render.** The renderer now owns the clock and echoes the playhead to React only ~20 Hz, but that still re-renders the whole context-consuming tree ~20×/s during playback. Split the editor context (or position the timeline/program playhead markers via direct DOM in the renderer tick) so playback causes near-zero React renders.
 - [ ] **Resolution/aspect presets** + project settings dialog (rename, fps, dimensions).
 - [ ] **Accessibility pass:** focus trapping in modals, ARIA roles/labels on transport and timeline controls, visible focus rings, Esc/Tab semantics.
 - [ ] **Thumbnail filmstrips** for video clips (sample frames to an offscreen canvas) and richer waveform caching.
@@ -343,6 +345,7 @@ Prioritized backlog. Check items off and move them to the [Changelog](#changelog
 
 > Newest first. Add an entry whenever you complete a fix or a roadmap item.
 
+- **2026-06-23** — Fix: smooth playback (was "jumping frames"). The playhead was advanced through React — `ProgramMonitor` dispatched `playback/setPlayhead` ~60×/s, re-rendering the whole `useEditor()` tree every frame and starving the canvas RAF + video decode; the renderer also only saw a new playhead on React commit, so it redrew the same frame then jumped. Now `mediaRenderer` owns the playback clock: it advances `localPlayhead` in its own RAF, draws from it, handles loop/bounds/end, and echoes the playhead back to React only ~20 Hz (`PUBLISH_INTERVAL`) via a new volatile `playback/tickPlayhead` action. User seeks use `playback/setPlayhead`, which bumps the new `state.seekId`; the renderer adopts React's playhead only when `seekId` changes (or while paused), so it never mistakes its own echo for a seek. Verified the clock logic in isolation (smooth/monotonic under 3–5 frame echo latency, seek-while-playing adopted, end-pause + loop correct). New surface: `playback/tickPlayhead`, `state.seekId`, `mediaRenderer.{localPlayhead,duration,_publishAcc}`, and `onTick({ t, dt, playing, rate, publish, atEnd })`.
 - **2026-06-23** — Fix: declared the missing `innerRef` (`useRef(null)`) in `Timeline()`. It was used at the inner content `<div>`, in the `seek` callback, and passed to `TrackRow`, but never created — throwing `ReferenceError: innerRef is not defined` during render and blanking the UI (no error boundary). Also authored this README as the project's resume-from source of truth.
 - **(earlier)** — Feature work: kinetic/elemental titles (fire/rock/ground/air), iMovie-style text motion (entry/exit), PiP preset grid, vertical alignment, timeline zoom slider + Fit, playhead/ruler gutter alignment, direct canvas manipulation, dual/single monitor toggle, live mixer meters, analyzer, MediaRecorder export, JSON save/load. (Pre-existing baseline; see `git log` once a VCS/Node environment is available.)
 

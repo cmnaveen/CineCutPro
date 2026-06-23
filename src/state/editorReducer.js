@@ -397,6 +397,11 @@ export function reducer(state, action) {
 
     /* ===== Playback ===== */
     case 'playback/setPlayhead':
+      // User-initiated seek: bump seekId so the renderer adopts this playhead.
+      return { ...state, playhead: Math.max(0, action.t), seekId: (state.seekId ?? 0) + 1 };
+    case 'playback/tickPlayhead':
+      // Renderer-owned playback clock echoing its time back to React (throttled).
+      // Deliberately does NOT bump seekId, so the renderer ignores its own echo.
       return { ...state, playhead: Math.max(0, action.t) };
     case 'playback/togglePlay':
       return { ...state, playing: !state.playing, playbackRate: state.playing ? state.playbackRate : Math.sign(state.playbackRate || 1) };

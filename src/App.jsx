@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useEditor } from './state/EditorContext.jsx';
 import { Header } from './components/Header.jsx';
 import { MediaLibrary } from './components/MediaLibrary.jsx';
@@ -28,8 +28,80 @@ import './styles/animations.css';
 
 export default function App() {
   useKeyboard();
-  const { state } = useEditor();
+  const { state, dispatch } = useEditor();
   const single = state.ui.monitorMode === 'single';
+
+  // Automatically load default media files on startup if none exist
+  useEffect(() => {
+    if (state.media.length > 0) return;
+
+    const filesToLoad = [
+      { name: 'Svadotsava_Podi.mp4', url: '/Svadotsava_Podi.mp4', size: 9454796 },
+      { name: 'Svadotsava_Mindful_Dining.mp4', url: '/Svadotsava_Mindful_Dining.mp4', size: 2000000 }
+    ];
+
+    filesToLoad.forEach(({ name, url, size }) => {
+      const v = document.createElement('video');
+      v.preload = 'metadata';
+      v.src = url;
+      v.onloadedmetadata = () => {
+        const duration = v.duration || 10;
+        const naturalWidth = v.videoWidth || 1920;
+        const naturalHeight = v.videoHeight || 1080;
+        
+        v.currentTime = Math.min(0.5, duration * 0.1);
+        v.onseeked = () => {
+          let thumb = null;
+          try {
+            const c = document.createElement('canvas');
+            c.width = 160;
+            c.height = Math.round(160 * (naturalHeight / naturalWidth || 0.5625));
+            const ctx = c.getContext('2d');
+            ctx.drawImage(v, 0, 0, c.width, c.height);
+            thumb = c.toDataURL('image/jpeg', 0.6);
+          } catch (_) {}
+
+          dispatch({
+            type: 'media/add',
+            items: [{
+              name,
+              kind: 'video',
+              src: url,
+              duration,
+              thumb,
+              meta: {
+                size,
+                type: 'video/mp4',
+                naturalWidth,
+                naturalHeight
+              }
+            }]
+          });
+        };
+      };
+    });
+  }, [state.media.length, dispatch]);
+
+  // Auto-insert Svadotsava_Podi.mp4 onto the timeline when loaded
+  useEffect(() => {
+    const targetMedia = state.media.find(m => m.name === 'Svadotsava_Podi.mp4');
+    if (targetMedia && state.clips.length === 0) {
+      dispatch({
+        type: 'clip/insertFromMedia',
+        mediaId: targetMedia.id,
+        trackId: 'trk_4', // Video 1 — Primary
+        start: 0,
+        srcIn: 0,
+        srcOut: targetMedia.duration
+      });
+      dispatch({
+        type: 'toast/push',
+        kind: 'success',
+        message: 'Successfully loaded Svadotsava_Podi.mp4 onto timeline!',
+        ttl: 4000
+      });
+    }
+  }, [state.media, state.clips.length, dispatch]);
 
   return (
     <div className="cc-app">

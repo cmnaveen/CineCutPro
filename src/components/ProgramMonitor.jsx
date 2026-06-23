@@ -35,42 +35,22 @@ export function ProgramMonitor() {
   // Push current state into the renderer every render
   useEffect(() => {
     mediaRenderer.setState(state);
+    mediaRenderer.duration = duration;
   });
 
-  // Advance playhead while playing.  We read live state via a ref so the
-  // effect doesn't re-bind on every playhead tick (which would shred the RAF).
-  const playStateRef = useRef(state);
-  playStateRef.current = state;
-  const durationRef = useRef(duration);
-  durationRef.current = duration;
-
+  // The renderer owns the playback clock (it advances time in its own RAF, fully
+  // decoupled from React) and pushes the playhead back here — throttled — so the
+  // component tree no longer re-renders every frame during playback.
   useEffect(() => {
-    if (!state.playing) return;
-    let raf;
-    let last = performance.now();
-    const step = (t) => {
-      const dt = (t - last) / 1000;
-      last = t;
-      const cur = playStateRef.current;
-      const dur = durationRef.current;
-      const next = cur.playhead + dt * (cur.playbackRate || 1);
-      const min = cur.inPoint != null && cur.loop ? cur.inPoint : 0;
-      const max = cur.outPoint != null && cur.loop ? cur.outPoint : dur;
-      let bounded = next;
-      if (bounded < min) bounded = cur.loop ? max : min;
-      if (bounded > max) bounded = cur.loop ? min : max;
-      dispatch({ type: 'playback/setPlayhead', t: bounded });
-      if (!cur.loop && (bounded <= 0 || bounded >= dur)) {
+    return mediaRenderer.onTick(({ publish, atEnd, t }) => {
+      if (atEnd) {
+        dispatch({ type: 'playback/tickPlayhead', t });
         dispatch({ type: 'playback/pause' });
-        return;
+      } else if (publish) {
+        dispatch({ type: 'playback/tickPlayhead', t });
       }
-      raf = requestAnimationFrame(step);
-    };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-    // We intentionally only re-bind when playback toggles on/off.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.playing, dispatch]);
+    });
+  }, [dispatch]);
 
   // Drive audio engine from active clips — sample keyframed volume via the renderer.
   useEffect(() => {

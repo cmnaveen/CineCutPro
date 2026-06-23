@@ -18,6 +18,11 @@ import { applyChromaKey } from './chromaKey.js';
 const PROGRAM_W = 1920;
 const PROGRAM_H = 1080;
 
+// The renderer advances its own playback clock every RAF frame (smooth, and
+// independent of React). It pushes that time back into React state only this
+// often, so the whole component tree no longer re-renders once per frame.
+const PUBLISH_INTERVAL = 1 / 20; // seconds (~20 Hz playhead updates to React)
+
 class MediaRenderer {
   constructor() {
     this.programCanvas = null;
@@ -31,6 +36,9 @@ class MediaRenderer {
     this.lastTime = performance.now();
     this.currentState = null;
     this.lastPlayhead = 0;
+    this.localPlayhead = 0;  // renderer-owned playback clock (decoupled from React)
+    this.duration = 60;      // timeline duration (seconds) for playback bounds
+    this._publishAcc = 0;    // accumulator for throttled playhead publishing
     this.lastFrameStats = { drawCalls: 0, activeClips: 0, fps: 0 };
     this._fpsAcc = { frames: 0, time: 0 };
   }
@@ -61,7 +69,13 @@ class MediaRenderer {
   }
 
   setState(state) {
+    const prevSeekId = this.currentState ? this.currentState.seekId : undefined;
     this.currentState = state;
+    // Adopt React's playhead only on a genuine user seek (seekId changed) or
+    // while paused; during playback the renderer's own clock is authoritative.
+    if (!state.playing || state.seekId !== prevSeekId) {
+      this.localPlayhead = state.playhead;
+    }
   }
 
   start() {
@@ -142,13 +156,59 @@ class MediaRenderer {
     if (!element) return;
     try {
       if (element.tagName === 'VIDEO' || element.tagName === 'AUDIO') {
-        const drift = Math.abs(element.currentTime - mediaTime);
-        if (drift > 0.12 || !playing) {
-          element.currentTime = Math.max(0, mediaTime);
+        const diff = mediaTime - element.currentTime; // Positive means video is lagging, negative means ahead
+        
+        if (!playing) {
+          // Paused / Scrubbing: Sync immediately to show the correct frame if drift is noticeable
+          element.playbackRate = Math.max(0.25, Math.min(4, Math.abs(rate || 1)));
+          if (Math.abs(diff) > 0.03 && !element.seeking) {
+            element.currentTime = Math.max(0, mediaTime);
+          }
+          if (!element.paused) {
+            element.pause();
+          }
+        } else {
+          // Playing
+          if (rate > 0) {
+            if (element.paused) {
+              // When starting playback, seek to the current playhead first so it starts at the right spot.
+              element.playbackRate = rate;
+              if (Math.abs(diff) > 0.05 && !element.seeking) {
+                element.currentTime = Math.max(0, mediaTime);
+              }
+              element.play().catch(() => {});
+            } else {
+              // Already playing: use dynamic playbackRate adjustments to sync smoothly without seeks!
+              const absDiff = Math.abs(diff);
+              if (absDiff > 1.5 && !element.seeking) {
+                // Hard seek if drift is massive (e.g. > 1.5 seconds)
+                element.currentTime = Math.max(0, mediaTime);
+                element.playbackRate = rate;
+              } else if (absDiff > 0.03) {
+                // Micro-adjust playback rate to catch up or slow down
+                if (diff > 0) {
+                  // Video is lagging behind clock: speed up by 15% to catch up
+                  element.playbackRate = Math.min(4, rate * 1.15);
+                } else {
+                  // Video is ahead of clock: slow down by 15% to let clock catch up
+                  element.playbackRate = Math.max(0.25, rate * 0.85);
+                }
+              } else {
+                // In sync (drift <= 30ms): play at target rate
+                element.playbackRate = rate;
+              }
+            }
+          } else {
+            // Reverse playback or rate <= 0 (standard HTML5 video doesn't play backwards smoothly, so pause and seek)
+            element.playbackRate = Math.max(0.25, Math.min(4, Math.abs(rate || 1)));
+            if (!element.paused) {
+              element.pause();
+            }
+            if (Math.abs(diff) > 0.03 && !element.seeking) {
+              element.currentTime = Math.max(0, mediaTime);
+            }
+          }
         }
-        element.playbackRate = Math.max(0.25, Math.min(4, Math.abs(rate || 1)));
-        if (playing && rate > 0 && element.paused) element.play().catch(() => {});
-        if ((!playing || rate <= 0) && !element.paused) element.pause();
       }
     } catch (_) {}
   }
@@ -289,9 +349,30 @@ class MediaRenderer {
   _tick(dt) {
     const state = this.currentState;
     if (!state || !this.programCtx) return;
-    const t = state.playhead;
     const playing = state.playing;
     const rate = state.playbackRate ?? 1;
+
+    // ----- Playback clock: advance our own time, decoupled from React -----
+    let publish = false;
+    let atEnd = false;
+    if (playing) {
+      this.localPlayhead += dt * rate;
+      const dur = this.duration || 60;
+      const loop = state.loop;
+      const min = state.inPoint != null && loop ? state.inPoint : 0;
+      const max = state.outPoint != null && loop ? state.outPoint : dur;
+      if (this.localPlayhead <= min) { this.localPlayhead = loop ? max : min; if (!loop && rate < 0) atEnd = true; }
+      if (this.localPlayhead >= max) { this.localPlayhead = loop ? min : max; if (!loop && rate > 0) atEnd = true; }
+      this._publishAcc += dt;
+      if (atEnd || this._publishAcc >= PUBLISH_INTERVAL) {
+        this._publishAcc = 0;
+        publish = true;
+      }
+    } else {
+      this.localPlayhead = state.playhead;
+      this._publishAcc = 0;
+    }
+    const t = this.localPlayhead;
 
     this._fpsAcc.frames++;
     this._fpsAcc.time += dt;
@@ -300,7 +381,7 @@ class MediaRenderer {
       this._fpsAcc = { frames: 0, time: 0 };
     }
 
-    for (const fn of this.tickHandlers) fn({ t, dt, playing, rate });
+    for (const fn of this.tickHandlers) fn({ t, dt, playing, rate, publish, atEnd });
 
     this.programCtx.fillStyle = '#05080f';
     this.programCtx.fillRect(0, 0, PROGRAM_W, PROGRAM_H);

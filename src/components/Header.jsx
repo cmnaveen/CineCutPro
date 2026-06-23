@@ -2,6 +2,7 @@ import React from 'react';
 import { useEditor } from '../state/EditorContext.jsx';
 import { Icon } from './icons/IconSet.jsx';
 import { formatTC } from '../engine/timecode.js';
+import { audioEngine } from '../engine/audioEngine.js';
 
 export function Header() {
   const { state, dispatch, undo, redo, historyDepth } = useEditor();
@@ -47,21 +48,30 @@ export function Header() {
           </button>
           <button
             className="cc-icon-btn"
-            onClick={() => dispatch({ type: 'playback/jklReverse' })}
+            onClick={() => {
+              audioEngine.resume();
+              dispatch({ type: 'playback/jklReverse' });
+            }}
             title="Reverse (J)"
           >
             <Icon.Back />
           </button>
           <button
             className="cc-icon-btn cc-icon-btn--primary"
-            onClick={() => dispatch({ type: 'playback/togglePlay' })}
+            onClick={() => {
+              audioEngine.resume();
+              dispatch({ type: 'playback/togglePlay' });
+            }}
             title="Play / Pause (Space / K)"
           >
             {playing ? <Icon.Pause /> : <Icon.Play />}
           </button>
           <button
             className="cc-icon-btn"
-            onClick={() => dispatch({ type: 'playback/jklForward' })}
+            onClick={() => {
+              audioEngine.resume();
+              dispatch({ type: 'playback/jklForward' });
+            }}
             title="Forward (L) — press again for 2×/4×"
           >
             <Icon.Fwd />

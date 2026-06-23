@@ -71,6 +71,7 @@ export const initialState = {
 
   /* ---------- Playback ---------- */
   playhead: 0,
+  seekId: 0,         // bumped on user seeks so the renderer clock can detect scrubs
   playing: false,
   playbackRate: 1, // sign + magnitude for JKL
   jklIndex: 0,     // 0..3 for 1x/2x/4x ladder
