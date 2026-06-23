@@ -1,188 +1,159 @@
-import React, { useState, useContext, useRef, useEffect } from 'react';
-import { EditorContext } from '../context/EditorContext';
+import React from 'react';
+import { useEditor } from '../state/EditorContext.jsx';
+import { Icon } from './icons/IconSet.jsx';
+import { formatTC } from '../engine/timecode.js';
 
-export default function Header({ onOpenExport, onOpenHelp }) {
-  const { 
-    undo, redo, undoStack, redoStack, 
-    clips, setClips, tracks, setTracks, setSelectedClipId, setSelectedTrackId, setPlayhead,
-    transitionsPanelOpen, setTransitionsPanelOpen
-  } = useContext(EditorContext);
-  
-  const [activeMenu, setActiveMenu] = useState(null);
-  const headerRef = useRef(null);
-
-  const toggleMenu = (menu) => {
-    setActiveMenu(prev => prev === menu ? null : menu);
-  };
-
-  // Close menus on click outside
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (headerRef.current && !headerRef.current.contains(e.target)) {
-        setActiveMenu(null);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const handleNewProject = () => {
-    if (window.confirm("Are you sure you want to create a new project? All current timeline edits will be lost.")) {
-      setClips([]);
-      setSelectedClipId(null);
-      setSelectedTrackId(null);
-      setPlayhead(0);
-      setActiveMenu(null);
-    }
-  };
-
-  const handleSave = () => {
-    const projectData = {
-      version: "0.1",
-      timeline: {
-        tracks,
-        clips
-      }
-    };
-    const blob = new Blob([JSON.stringify(projectData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'project.vxp';
-    link.click();
-    URL.revokeObjectURL(url);
-    setActiveMenu(null);
-  };
-
-  const handleImportProject = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const data = JSON.parse(event.target.result);
-        if (data.timeline && data.timeline.clips) {
-          setClips(data.timeline.clips);
-          if (data.timeline.tracks) setTracks(data.timeline.tracks);
-          alert("Project imported successfully!");
-        } else {
-          alert("Invalid project file structure.");
-        }
-      } catch (err) {
-        alert("Failed to parse project file: " + err.message);
-      }
-    };
-    reader.readAsText(file);
-    setActiveMenu(null);
-  };
+export function Header() {
+  const { state, dispatch, undo, redo, historyDepth } = useEditor();
+  const playing = state.playing;
+  const dir = state.playbackRate >= 0 ? '▶' : '◀';
+  const mag = Math.abs(state.playbackRate || 1);
 
   return (
-    <header className="header-bar glass-panel" ref={headerRef}>
-      <div className="logo-section">
-        <h1>CINECUT PRO</h1>
-        <span className="logo-tag">nle</span>
+    <header className="cc-header">
+      <div className="cc-header__brand">
+        <div className="cc-header__logo" aria-hidden>
+          <span className="cc-header__logo-dot" />
+          <span className="cc-header__logo-dot cc-header__logo-dot--2" />
+          <span className="cc-header__logo-dot cc-header__logo-dot--3" />
+        </div>
+        <div>
+          <div className="cc-header__title">CineCutPro</div>
+          <div className="cc-header__subtitle">
+            <span className="cc-pill">{state.project.name}</span>
+            <span className="cc-pill cc-pill--muted">
+              {state.project.width}×{state.project.height} · {state.project.fps}fps
+            </span>
+            {state.project.dirty && <span className="cc-pill cc-pill--dirty">unsaved</span>}
+          </div>
+        </div>
       </div>
 
-      <nav className="menu-items">
-        {/* File Menu */}
-        <div className="menu-item">
-          <button 
-            className={`menu-button ${activeMenu === 'file' ? 'active' : ''}`}
-            onClick={() => toggleMenu('file')}
-          >
-            File
+      <div className="cc-header__center">
+        <div className="cc-transport">
+          <button className="cc-icon-btn" onClick={undo} title="Undo (Ctrl+Z)">
+            <Icon.Undo />
           </button>
-          {activeMenu === 'file' && (
-            <div className="dropdown-menu">
-              <button className="dropdown-item" onClick={handleNewProject}>
-                New Project
-                <span className="dropdown-shortcut">Ctrl+N</span>
-              </button>
-              <button className="dropdown-item" onClick={handleSave}>
-                Save Project (.vxp)
-                <span className="dropdown-shortcut">Ctrl+S</span>
-              </button>
-              <label className="dropdown-item" style={{ cursor: 'pointer' }}>
-                Import Project (.vxp)
-                <input 
-                  type="file" 
-                  accept=".vxp" 
-                  onChange={handleImportProject} 
-                  style={{ display: 'none' }} 
-                />
-              </label>
-            </div>
-          )}
-        </div>
-
-        {/* Edit Menu */}
-        <div className="menu-item">
-          <button 
-            className={`menu-button ${activeMenu === 'edit' ? 'active' : ''}`}
-            onClick={() => toggleMenu('edit')}
-          >
-            Edit
+          <button className="cc-icon-btn" onClick={redo} title="Redo (Ctrl+Y)">
+            <Icon.Redo />
           </button>
-          {activeMenu === 'edit' && (
-            <div className="dropdown-menu">
-              <button 
-                className="dropdown-item" 
-                onClick={() => { undo(); setActiveMenu(null); }}
-                disabled={undoStack.length === 0}
-                style={{ opacity: undoStack.length === 0 ? 0.5 : 1 }}
-              >
-                Undo
-                <span className="dropdown-shortcut">Ctrl+Z</span>
-              </button>
-              <button 
-                className="dropdown-item" 
-                onClick={() => { redo(); setActiveMenu(null); }}
-                disabled={redoStack.length === 0}
-                style={{ opacity: redoStack.length === 0 ? 0.5 : 1 }}
-              >
-                Redo
-                <span className="dropdown-shortcut">Ctrl+Y</span>
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Transitions Menu Toggle */}
-        <div className="menu-item">
-          <button 
-            className={`menu-button ${transitionsPanelOpen ? 'active' : ''}`}
-            onClick={() => { setTransitionsPanelOpen(!transitionsPanelOpen); setActiveMenu(null); }}
+          <span className="cc-transport__divider" />
+          <button
+            className="cc-icon-btn"
+            onClick={() => dispatch({ type: 'playback/setPlayhead', t: 0 })}
+            title="Go to start (Home)"
           >
-            Transitions
+            ⏮
           </button>
-        </div>
-
-        {/* Export Menu */}
-        <div className="menu-item">
-          <button 
-            className="menu-button"
-            onClick={() => { onOpenExport(); setActiveMenu(null); }}
+          <button
+            className="cc-icon-btn"
+            onClick={() => dispatch({ type: 'playback/jklReverse' })}
+            title="Reverse (J)"
           >
-            Export
+            <Icon.Back />
           </button>
-        </div>
-
-        {/* Help Menu */}
-        <div className="menu-item">
-          <button 
-            className="menu-button"
-            onClick={() => { onOpenHelp(); setActiveMenu(null); }}
+          <button
+            className="cc-icon-btn cc-icon-btn--primary"
+            onClick={() => dispatch({ type: 'playback/togglePlay' })}
+            title="Play / Pause (Space / K)"
           >
-            Help
+            {playing ? <Icon.Pause /> : <Icon.Play />}
           </button>
+          <button
+            className="cc-icon-btn"
+            onClick={() => dispatch({ type: 'playback/jklForward' })}
+            title="Forward (L) — press again for 2×/4×"
+          >
+            <Icon.Fwd />
+          </button>
+          <button
+            className="cc-icon-btn"
+            onClick={() => dispatch({ type: 'playback/stop' })}
+            title="Stop"
+          >
+            <Icon.Stop />
+          </button>
+          <span className="cc-transport__divider" />
+          <div className="cc-timecode" title="Timeline timecode">
+            <span className="cc-timecode__rate">
+              {dir} {mag}×
+            </span>
+            <span className="cc-timecode__value">{formatTC(state.playhead)}</span>
+          </div>
         </div>
-      </nav>
+      </div>
 
-      <div className="header-controls">
-        <button className="btn btn-primary" onClick={onOpenExport}>
-          Export Render
+      <div className="cc-header__right">
+        <button
+          className={`cc-chip ${state.ui.transitionsRailOpen ? 'is-on' : ''}`}
+          onClick={() => dispatch({ type: 'ui/toggle', key: 'transitionsRailOpen' })}
+          title="Transitions rail"
+        >
+          <Icon.Sparkles /> Transitions
         </button>
+        <button
+          className={`cc-chip ${state.ui.analyzerOpen ? 'is-on' : ''}`}
+          onClick={() => dispatch({ type: 'ui/toggle', key: 'analyzerOpen' })}
+          title="Boring / jump cut analyzer"
+        >
+          <Icon.Wand /> Analyzer
+        </button>
+        <button
+          className={`cc-chip ${state.ui.monitorMode === 'single' ? 'is-on' : ''}`}
+          onClick={() =>
+            dispatch({
+              type: 'ui/set',
+              key: 'monitorMode',
+              value: state.ui.monitorMode === 'dual' ? 'single' : 'dual'
+            })
+          }
+          title="Toggle dual / single monitor (\\)"
+        >
+          <Icon.Layers /> {state.ui.monitorMode === 'dual' ? 'Dual' : 'Single'}
+        </button>
+        <button
+          className="cc-icon-btn"
+          onClick={async () => {
+            const { downloadProject } = await import('../engine/projectIO.js');
+            downloadProject(state);
+            dispatch({ type: 'toast/push', kind: 'success', message: 'Project saved' });
+          }}
+          title="Save project (Ctrl+S)"
+        >
+          ⤓ Save
+        </button>
+        <button
+          className="cc-icon-btn"
+          onClick={async () => {
+            const { pickProjectFile } = await import('../engine/projectIO.js');
+            try {
+              const snap = await pickProjectFile();
+              dispatch({ type: 'project/loadAll', snapshot: snap });
+              dispatch({ type: 'toast/push', kind: 'success', message: 'Project loaded' });
+            } catch (err) {
+              if (err?.message !== 'cancelled') {
+                dispatch({ type: 'toast/push', kind: 'error', message: `Load failed: ${err.message}` });
+              }
+            }
+          }}
+          title="Open project (Ctrl+O)"
+        >
+          ⤒ Open
+        </button>
+        <button
+          className="cc-btn cc-btn--ghost"
+          onClick={() => dispatch({ type: 'ui/toggle', key: 'shortcutsOpen' })}
+          title="Keyboard shortcuts (?)"
+        >
+          <Icon.Help /> Shortcuts
+        </button>
+        <button
+          className="cc-btn cc-btn--primary"
+          onClick={() => dispatch({ type: 'ui/set', key: 'exportOpen', value: true })}
+        >
+          <Icon.Export /> Export
+        </button>
+        <div className="cc-history" title="Undo history depth">{historyDepth}/50</div>
       </div>
     </header>
   );

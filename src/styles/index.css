@@ -1,0 +1,194 @@
+/* ─────────────────────────────────────────────────────────────────────
+ * CineCutPro — global tokens, reset, and base typography.
+ * Theme uses HSL so accent shifts at runtime cost nothing.
+ * ───────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Hue rails — slate/navy */
+  --hue-base: 220;
+  --hue-accent: 210;
+  --hue-warn: 30;
+  --hue-bad: 354;
+  --hue-good: 152;
+
+  /* Surface ladder */
+  --surface-0: hsl(var(--hue-base) 35% 5%);
+  --surface-1: hsl(var(--hue-base) 30% 7%);
+  --surface-2: hsl(var(--hue-base) 28% 10%);
+  --surface-3: hsl(var(--hue-base) 26% 13%);
+  --surface-4: hsl(var(--hue-base) 24% 17%);
+  --surface-5: hsl(var(--hue-base) 22% 22%);
+
+  /* Text */
+  --text-1: hsl(var(--hue-base) 30% 96%);
+  --text-2: hsl(var(--hue-base) 18% 78%);
+  --text-3: hsl(var(--hue-base) 14% 56%);
+  --text-4: hsl(var(--hue-base) 12% 40%);
+
+  /* Borders / strokes */
+  --line-1: hsl(var(--hue-base) 25% 22% / .55);
+  --line-2: hsl(var(--hue-base) 25% 30% / .35);
+
+  /* Accents */
+  --accent: hsl(var(--hue-accent) 95% 64%);
+  --accent-2: hsl(190 95% 60%);
+  --accent-soft: hsl(var(--hue-accent) 95% 64% / .14);
+  --warn: hsl(var(--hue-warn) 95% 62%);
+  --bad: hsl(var(--hue-bad) 78% 58%);
+  --good: hsl(var(--hue-good) 65% 50%);
+
+  /* Glass */
+  --glass-bg-1: hsl(var(--hue-base) 26% 11% / .72);
+  --glass-bg-2: hsl(var(--hue-base) 26% 9% / .82);
+  --glass-blur: 18px;
+  --glass-border: hsl(var(--hue-base) 40% 70% / .14);
+  --glass-inset: hsl(var(--hue-base) 80% 90% / .04);
+
+  /* Radii */
+  --r-1: 6px;
+  --r-2: 10px;
+  --r-3: 14px;
+  --r-4: 20px;
+
+  /* Shadow */
+  --shadow-1: 0 1px 2px hsl(220 50% 2% / .55);
+  --shadow-2: 0 12px 30px -10px hsl(220 60% 2% / .8), 0 2px 4px hsl(220 50% 2% / .5);
+  --shadow-pop: 0 30px 80px -20px hsl(220 60% 2% / .9), 0 4px 12px hsl(220 50% 2% / .6);
+
+  /* Typography */
+  --font-ui: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  --font-display: 'Space Grotesk', 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Timing */
+  --easing-pop: cubic-bezier(.16, 1, .3, 1);
+  --easing-out: cubic-bezier(.2, .8, .2, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  margin: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: var(--surface-0);
+  color: var(--text-1);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background-image:
+    radial-gradient(ellipse 70% 55% at 20% 0%, hsl(210 75% 25% / .35), transparent 60%),
+    radial-gradient(ellipse 60% 50% at 90% 0%, hsl(265 70% 24% / .25), transparent 60%),
+    radial-gradient(ellipse 60% 80% at 60% 110%, hsl(195 75% 22% / .30), transparent 60%);
+}
+
+button, input, select, textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  outline: none;
+}
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Custom scrollbars — match the theme without yelling */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--hue-base) 30% 25% / .55);
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--hue-base) 30% 33% / .8);
+  background-clip: padding-box;
+  border: 3px solid transparent;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+input[type='range'] {
+  --thumb: var(--accent);
+  appearance: none;
+  width: 100%;
+  height: 22px;
+  background: transparent;
+  cursor: pointer;
+}
+input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  background: hsl(var(--hue-base) 22% 22%);
+  border-radius: 99px;
+}
+input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: var(--thumb);
+  box-shadow: 0 0 0 1px hsl(var(--hue-accent) 80% 30% / .8), 0 6px 16px hsl(var(--hue-accent) 95% 50% / .25);
+  cursor: grab;
+  transition: transform .15s var(--easing-pop);
+}
+input[type='range']::-webkit-slider-thumb:active {
+  transform: scale(1.15);
+  cursor: grabbing;
+}
+input[type='range']::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--thumb);
+  border: 0;
+}
+
+input[type='checkbox'] {
+  accent-color: var(--accent);
+}
+input[type='color'] {
+  width: 30px;
+  height: 22px;
+  border: 1px solid var(--line-1);
+  border-radius: 4px;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+
+select, .cc-textarea, input[type='text'], input[type='search'], input[type='number'] {
+  background: hsl(var(--hue-base) 26% 9% / .75);
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-1);
+  padding: 6px 8px;
+  color: var(--text-1);
+}
+.cc-textarea {
+  width: 100%;
+  resize: vertical;
+  font-family: var(--font-ui);
+}
+
+::selection {
+  background: hsl(var(--hue-accent) 95% 60% / .4);
+}

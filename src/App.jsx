@@ -1,94 +1,60 @@
-import React, { useState } from 'react';
-import { EditorProvider } from './context/EditorContext';
-import Header from './components/Header';
-import MediaBrowser from './components/MediaBrowser';
-import PreviewPanel from './components/PreviewPanel';
-import InspectorPanel from './components/InspectorPanel';
-import TimelinePanel from './components/TimelinePanel';
-import ExportDialog from './components/ExportDialog';
-import TransitionsPanel from './components/TransitionsPanel';
+import React from 'react';
+import { useEditor } from './state/EditorContext.jsx';
+import { Header } from './components/Header.jsx';
+import { MediaLibrary } from './components/MediaLibrary.jsx';
+import { SourceMonitor } from './components/SourceMonitor.jsx';
+import { ProgramMonitor } from './components/ProgramMonitor.jsx';
+import { Inspector } from './components/Inspector.jsx';
+import { Timeline } from './components/Timeline.jsx';
+import { TrimEditor } from './components/TrimEditor.jsx';
+import { AnalyzerSlideout } from './components/AnalyzerSlideout.jsx';
+import { ExportDialog } from './components/ExportDialog.jsx';
+import { ShortcutsModal } from './components/ShortcutsModal.jsx';
+import { TransitionsRail } from './components/TransitionsRail.jsx';
+import { Toasts } from './components/Toast.jsx';
+import { StatusBar } from './components/StatusBar.jsx';
+import { ContextMenu } from './components/ContextMenu.jsx';
+import { WelcomeModal } from './components/WelcomeModal.jsx';
+import { useKeyboard } from './hooks/useKeyboard.js';
+import './styles/app.css';
+import './styles/header.css';
+import './styles/media-library.css';
+import './styles/monitors.css';
+import './styles/inspector.css';
+import './styles/timeline.css';
+import './styles/modals.css';
+import './styles/premium.css';
+import './styles/animations.css';
 
-function App() {
-  const [isExportOpen, setIsExportOpen] = useState(false);
-  const [isHelpOpen, setIsHelpOpen] = useState(false);
+export default function App() {
+  useKeyboard();
+  const { state } = useEditor();
+  const single = state.ui.monitorMode === 'single';
 
   return (
-    <EditorProvider>
-      <div className="app-container">
-        {/* Top Header menu */}
-        <Header 
-          onOpenExport={() => setIsExportOpen(true)} 
-          onOpenHelp={() => setIsHelpOpen(true)}
-        />
+    <div className="cc-app">
+      <Header />
+      <main className="cc-workspace">
+        <MediaLibrary />
+        <section className={`cc-monitors ${single ? 'cc-monitors--single' : ''}`}>
+          {!single && <SourceMonitor />}
+          <ProgramMonitor />
+        </section>
+        <Inspector />
+      </main>
+      <Timeline />
+      <StatusBar />
 
-        {/* Central Workspace Layout */}
-        <div className="workspace-layout">
-          {/* Left panel: Library assets */}
-          <MediaBrowser />
+      <TransitionsRail />
+      <AnalyzerSlideout />
+      <TrimEditor />
+      <ShortcutsModal />
+      <ExportDialog />
+      <WelcomeModal />
+      <ContextMenu />
+      <Toasts />
 
-          {/* Center panel: Canvas Viewport player */}
-          <PreviewPanel />
-
-          {/* Right panel: Sliders & Effects stack */}
-          <InspectorPanel />
-
-          {/* Transitions panel slideout */}
-          <TransitionsPanel />
-        </div>
-
-        {/* Bottom panel: Tracks timeline ruler */}
-        <TimelinePanel />
-
-        {/* Export settings dialog */}
-        <ExportDialog 
-          isOpen={isExportOpen} 
-          onClose={() => setIsExportOpen(false)} 
-        />
-
-        {/* Help Keyboard Shortcuts Modal */}
-        {isHelpOpen && (
-          <div className="modal-overlay" onClick={() => setIsHelpOpen(false)}>
-            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ width: '500px' }}>
-              <div className="modal-header">
-                <h2>Keyboard Shortcuts Guide</h2>
-                <button className="btn-icon" onClick={() => setIsHelpOpen(false)}>✖</button>
-              </div>
-              <div className="modal-body" style={{ gap: '10px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: '8px', fontSize: '0.8rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '8px', maxHeight: '300px', overflowY: 'auto' }}>
-                  <strong>Space</strong> <span>Play / Pause</span>
-                  <strong>J / K / L</strong> <span>Reverse / Pause / Fast Forward playback</span>
-                  <strong>← / →</strong> <span>Step 1 frame (Shift: 10 frames)</span>
-                  <strong>Home / End</strong> <span>Jump to timeline start / end</span>
-                  <strong>[ / ]</strong> <span>Mark Source In / Out points</span>
-                  <strong>F9 / F10</strong> <span>Insert Edit / Overwrite Edit</span>
-                  <strong>W / E / Q</strong> <span>Smart Insert / Append / Place on Top</span>
-                  <strong>I / O</strong> <span>Mark loop region start / end</span>
-                  <strong>Del / Backspace</strong><span>Delete selected clip</span>
-                  <strong>Ctrl+Z / Y</strong> <span>Undo / Redo (50 levels)</span>
-                  <strong>Ctrl+D</strong> <span>Duplicate active clip</span>
-                  <strong>V / B / T</strong> <span>Select (V) / Blade (B) / Smart Trim (T)</span>
-                </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
-                  💡 <strong>DaVinci Resolve Editing Tips:</strong>
-                  <ul style={{ paddingLeft: '16px', marginTop: '4px' }}>
-                    <li>Double-click assets in the Media Browser to load them in the **Source Monitor** (Dual View).</li>
-                    <li>Mark In/Out bounds on the source, then press **F9** (Insert) or **F10** (Overwrite) to load onto the active track.</li>
-                    <li>Press **W** (Smart Insert), **E** (Append at End), or **Q** (Place on Top) to trigger Cut Page actions instantly.</li>
-                    <li>Toggle the **Transitions** menu in the header and drag transitions (e.g. Cross Dissolve, Clock Wipe, Push) onto clip junctions to blend them.</li>
-                    <li>In **Smart Trim Mode (T)**, click-and-drag different zones of a clip: left/right edges for **Ripple Trim** / **Roll Edit**, center area for **Slip** / **Slide**.</li>
-                    <li>Create and place a **⚡ Adjustment Clip** to apply filters (Color Grade, Blur) to all video tracks underneath.</li>
-                  </ul>
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button className="btn btn-primary" onClick={() => setIsHelpOpen(false)}>Got it</button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </EditorProvider>
+      <div className="cc-grain" aria-hidden />
+    </div>
   );
 }
-
-export default App;

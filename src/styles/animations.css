@@ -1,0 +1,33 @@
+/* ─────────────────────────────────────────────────────────────────────
+ * Shared micro-animations.
+ * ───────────────────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 hsl(var(--hue-accent) 95% 50% / .5); }
+  50%      { box-shadow: 0 0 0 8px hsl(var(--hue-accent) 95% 50% / 0); }
+}
+
+.cc-clip {
+  animation: fade-up .25s var(--easing-pop) both;
+}
+.cc-monitor {
+  animation: fade-up .35s var(--easing-pop) both;
+}
+.cc-panel {
+  animation: fade-up .35s var(--easing-pop) both;
+}
+.cc-icon-btn--primary {
+  animation: glow-pulse 3.5s var(--easing-out) infinite;
+}
+.cc-btn--primary:hover,
+.cc-icon-btn--primary:hover {
+  animation: none;
+}
