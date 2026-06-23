@@ -12,6 +12,7 @@ export function Timeline() {
   const { state, dispatch, duration } = useEditor();
   const pps = state.pixelsPerSecond;
   const scrollRef = useRef(null);
+  const innerRef = useRef(null);
   const width = TRACK_HEAD_W + Math.max(1200, duration * pps);
   const [dragMode, setDragMode] = useState(null);
 
