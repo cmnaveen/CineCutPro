@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { useEditor } from './state/EditorContext.jsx';
 import { Header } from './components/Header.jsx';
-import { MediaLibrary } from './components/MediaLibrary.jsx';
+import { LeftControlPanel } from './components/LeftControlPanel.jsx';
 import { SourceMonitor } from './components/SourceMonitor.jsx';
 import { ProgramMonitor } from './components/ProgramMonitor.jsx';
 import { Inspector } from './components/Inspector.jsx';
@@ -15,6 +15,7 @@ import { Toasts } from './components/Toast.jsx';
 import { StatusBar } from './components/StatusBar.jsx';
 import { ContextMenu } from './components/ContextMenu.jsx';
 import { WelcomeModal } from './components/WelcomeModal.jsx';
+import { ProjectSettings } from './components/ProjectSettings.jsx';
 import { useKeyboard } from './hooks/useKeyboard.js';
 import './styles/app.css';
 import './styles/header.css';
@@ -25,6 +26,8 @@ import './styles/timeline.css';
 import './styles/modals.css';
 import './styles/premium.css';
 import './styles/animations.css';
+import './styles/pro.css';
+import './styles/left-panel.css';
 
 export default function App() {
   useKeyboard();
@@ -107,7 +110,7 @@ export default function App() {
     <div className="cc-app">
       <Header />
       <main className="cc-workspace">
-        <MediaLibrary />
+        <LeftControlPanel />
         <section className={`cc-monitors ${single ? 'cc-monitors--single' : ''}`}>
           {!single && <SourceMonitor />}
           <ProgramMonitor />
@@ -123,6 +126,7 @@ export default function App() {
       <ShortcutsModal />
       <ExportDialog />
       <WelcomeModal />
+      <ProjectSettings />
       <ContextMenu />
       <Toasts />
 

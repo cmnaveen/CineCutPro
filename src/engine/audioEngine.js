@@ -23,6 +23,7 @@ class AudioEngine {
     this.meters = new Map();
     /** trackId -> peak envelope (decays toward meter for "peak hold" look) */
     this.peaks = new Map();
+    this._exportDest = null; // lazily-created MediaStreamDestination for export
   }
 
   /** Idempotent — returns true if the AudioContext is alive. */
@@ -95,6 +96,17 @@ class AudioEngine {
   setMasterVolume(v) {
     if (!this.ctx || !this.master) return;
     this.master.gain.setTargetAtTime(Math.max(0, v), this.ctx.currentTime, 0.02);
+  }
+
+  /** A MediaStream carrying the live master mix, so MediaRecorder can mux audio. */
+  getExportStream() {
+    this.ensure();
+    if (!this.ctx || !this.master) return null;
+    if (!this._exportDest) {
+      this._exportDest = this.ctx.createMediaStreamDestination();
+      this.master.connect(this._exportDest);
+    }
+    return this._exportDest.stream;
   }
 
   /**

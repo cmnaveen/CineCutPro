@@ -216,7 +216,7 @@ function TimelineToolbar({ state, dispatch, pps }) {
 }
 
 function titleTrackId(state) {
-  return state.tracks.find((t) => t.kind === TRACK_KINDS.TITLE)?.id ?? state.tracks[0].id;
+  return state.tracks.find((t) => t.kind === TRACK_KINDS.TITLE)?.id ?? state.tracks[0]?.id ?? null;
 }
 function subtitleTrackId(state) {
   return state.tracks.find((t) => t.kind === TRACK_KINDS.SUBTITLE)?.id ?? titleTrackId(state);
@@ -480,10 +480,15 @@ function ClipBlock({ clip, track, state, dispatch, pps, dragMode, setDragMode })
       const startPx = e.clientX;
       const originStart = clip.start;
       setDragMode({ kind: 'move', id: clip.id });
+      const movingSel = ids.length > 1 && ids.includes(clip.id);
       const onMove = (ev) => {
         const dx = ev.clientX - startPx;
         const proposed = snap(originStart + dx / pps);
-        dispatch({ type: 'clip/move', id: clip.id, start: proposed });
+        if (movingSel) {
+          dispatch({ type: 'clip/moveSelection', ids, anchorId: clip.id, start: proposed });
+        } else {
+          dispatch({ type: 'clip/move', id: clip.id, start: proposed });
+        }
       };
       const onUp = () => {
         window.removeEventListener('mousemove', onMove);

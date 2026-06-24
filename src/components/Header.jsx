@@ -11,38 +11,71 @@ export function Header() {
   const mag = Math.abs(state.playbackRate || 1);
 
   return (
-    <header className="cc-header">
-      <div className="cc-header__brand">
-        <div className="cc-header__logo" aria-hidden>
-          <span className="cc-header__logo-dot" />
-          <span className="cc-header__logo-dot cc-header__logo-dot--2" />
-          <span className="cc-header__logo-dot cc-header__logo-dot--3" />
+    <header className="cc-header" style={{ background: '#09090b', borderBottom: '1px solid #1c1c21' }}>
+      {/* Left: CapCut Hex Logo & Project Renaming */}
+      <div className="cc-header__brand" style={{ gap: '14px' }}>
+        <div 
+          className="cc-left-sidebar__logo-icon" 
+          style={{ 
+            width: '28px', 
+            height: '28px', 
+            background: '#fff', 
+            color: '#000', 
+            fontWeight: '900',
+            fontSize: '14px',
+            borderRadius: '0' 
+          }}
+          aria-hidden
+        >
+          C
         </div>
-        <div>
-          <div className="cc-header__title">CineCutPro</div>
-          <div className="cc-header__subtitle">
-            <span className="cc-pill">{state.project.name}</span>
-            <span className="cc-pill cc-pill--muted">
-              {state.project.width}×{state.project.height} · {state.project.fps}fps
-            </span>
-            {state.project.dirty && <span className="cc-pill cc-pill--dirty">unsaved</span>}
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <input
+              type="text"
+              value={state.project.name}
+              onChange={(e) => dispatch({ type: 'project/rename', name: e.target.value })}
+              title="Click to rename project"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#f4f4f5',
+                fontWeight: 700,
+                fontSize: '13.5px',
+                padding: '2px 4px',
+                borderRadius: '4px',
+                width: '150px',
+                outline: 'none',
+                transition: 'background 0.2s'
+              }}
+              className="cc-header-project-name-input"
+            />
+            <span style={{ fontSize: '10px', color: '#71717a' }}>▼</span>
+          </div>
+          <div className="cc-header__subtitle" style={{ fontSize: '10px', color: '#71717a', margin: '2px 0 0 4px' }}>
+            <span>{state.project.width}×{state.project.height} · {state.project.fps}fps</span>
+            {state.project.dirty && (
+              <span style={{ color: '#eab308', marginLeft: '6px', fontWeight: 'bold' }}>[unsaved]</span>
+            )}
           </div>
         </div>
       </div>
 
+      {/* Center: Playback & Timeline Navigation Controls */}
       <div className="cc-header__center">
-        <div className="cc-transport">
-          <button className="cc-icon-btn" onClick={undo} title="Undo (Ctrl+Z)">
-            <Icon.Undo />
+        <div className="cc-transport" style={{ background: '#121215', borderColor: '#27272a' }}>
+          <button className="cc-icon-btn" onClick={undo} title="Undo (Ctrl+Z)" style={{ border: 'none' }}>
+            <Icon.Undo size={14} />
           </button>
-          <button className="cc-icon-btn" onClick={redo} title="Redo (Ctrl+Y)">
-            <Icon.Redo />
+          <button className="cc-icon-btn" onClick={redo} title="Redo (Ctrl+Y)" style={{ border: 'none' }}>
+            <Icon.Redo size={14} />
           </button>
           <span className="cc-transport__divider" />
           <button
             className="cc-icon-btn"
             onClick={() => dispatch({ type: 'playback/setPlayhead', t: 0 })}
             title="Go to start (Home)"
+            style={{ border: 'none' }}
           >
             ⏮
           </button>
@@ -53,8 +86,9 @@ export function Header() {
               dispatch({ type: 'playback/jklReverse' });
             }}
             title="Reverse (J)"
+            style={{ border: 'none' }}
           >
-            <Icon.Back />
+            <Icon.Back size={14} />
           </button>
           <button
             className="cc-icon-btn cc-icon-btn--primary"
@@ -63,8 +97,20 @@ export function Header() {
               dispatch({ type: 'playback/togglePlay' });
             }}
             title="Play / Pause (Space / K)"
+            style={{ 
+              borderRadius: '50%', 
+              width: '28px', 
+              height: '28px', 
+              padding: 0, 
+              display: 'grid', 
+              placeItems: 'center', 
+              background: '#fff', 
+              color: '#000', 
+              border: 'none',
+              boxShadow: '0 2px 8px rgba(255,255,255,0.15)'
+            }}
           >
-            {playing ? <Icon.Pause /> : <Icon.Play />}
+            {playing ? <Icon.Pause size={14} /> : <Icon.Play size={14} />}
           </button>
           <button
             className="cc-icon-btn"
@@ -72,42 +118,31 @@ export function Header() {
               audioEngine.resume();
               dispatch({ type: 'playback/jklForward' });
             }}
-            title="Forward (L) — press again for 2×/4×"
+            title="Forward (L)"
+            style={{ border: 'none' }}
           >
-            <Icon.Fwd />
+            <Icon.Fwd size={14} />
           </button>
           <button
             className="cc-icon-btn"
             onClick={() => dispatch({ type: 'playback/stop' })}
             title="Stop"
+            style={{ border: 'none' }}
           >
-            <Icon.Stop />
+            <Icon.Stop size={14} />
           </button>
           <span className="cc-transport__divider" />
-          <div className="cc-timecode" title="Timeline timecode">
-            <span className="cc-timecode__rate">
+          <div className="cc-timecode" title="Timeline timecode" style={{ background: '#09090b', borderColor: '#1c1c21' }}>
+            <span className="cc-timecode__rate" style={{ fontSize: '10px' }}>
               {dir} {mag}×
             </span>
-            <span className="cc-timecode__value">{formatTC(state.playhead)}</span>
+            <span className="cc-timecode__value" style={{ fontSize: '11px' }}>{formatTC(state.playhead)}</span>
           </div>
         </div>
       </div>
 
-      <div className="cc-header__right">
-        <button
-          className={`cc-chip ${state.ui.transitionsRailOpen ? 'is-on' : ''}`}
-          onClick={() => dispatch({ type: 'ui/toggle', key: 'transitionsRailOpen' })}
-          title="Transitions rail"
-        >
-          <Icon.Sparkles /> Transitions
-        </button>
-        <button
-          className={`cc-chip ${state.ui.analyzerOpen ? 'is-on' : ''}`}
-          onClick={() => dispatch({ type: 'ui/toggle', key: 'analyzerOpen' })}
-          title="Boring / jump cut analyzer"
-        >
-          <Icon.Wand /> Analyzer
-        </button>
+      {/* Right: Menu buttons and Bright Blue Export Button */}
+      <div className="cc-header__right" style={{ gap: '8px' }}>
         <button
           className={`cc-chip ${state.ui.monitorMode === 'single' ? 'is-on' : ''}`}
           onClick={() =>
@@ -118,22 +153,26 @@ export function Header() {
             })
           }
           title="Toggle dual / single monitor (\\)"
+          style={{ fontSize: '11px', padding: '5px 10px' }}
         >
-          <Icon.Layers /> {state.ui.monitorMode === 'dual' ? 'Dual' : 'Single'}
+          <Icon.Layers size={13} /> {state.ui.monitorMode === 'dual' ? 'Dual' : 'Single'}
         </button>
+        
         <button
-          className="cc-icon-btn"
+          className="cc-btn cc-btn--ghost"
           onClick={async () => {
             const { downloadProject } = await import('../engine/projectIO.js');
             downloadProject(state);
             dispatch({ type: 'toast/push', kind: 'success', message: 'Project saved' });
           }}
           title="Save project (Ctrl+S)"
+          style={{ fontSize: '11px', padding: '5px 10px' }}
         >
           ⤓ Save
         </button>
+        
         <button
-          className="cc-icon-btn"
+          className="cc-btn cc-btn--ghost"
           onClick={async () => {
             const { pickProjectFile } = await import('../engine/projectIO.js');
             try {
@@ -147,23 +186,67 @@ export function Header() {
             }
           }}
           title="Open project (Ctrl+O)"
+          style={{ fontSize: '11px', padding: '5px 10px' }}
         >
           ⤒ Open
         </button>
+
+        <button
+          className="cc-btn cc-btn--ghost"
+          onClick={() => dispatch({ type: 'ui/set', key: 'projectSettingsOpen', value: true })}
+          title="Project settings"
+          style={{ fontSize: '11px', padding: '5px 10px' }}
+        >
+          <Icon.Settings size={13} /> Settings
+        </button>
+
         <button
           className="cc-btn cc-btn--ghost"
           onClick={() => dispatch({ type: 'ui/toggle', key: 'shortcutsOpen' })}
           title="Keyboard shortcuts (?)"
+          style={{ fontSize: '11px', padding: '5px 10px' }}
         >
-          <Icon.Help /> Shortcuts
+          <Icon.Help size={13} /> Shortcuts
         </button>
+
+        {/* CapCut-style bright blue export button */}
         <button
           className="cc-btn cc-btn--primary"
           onClick={() => dispatch({ type: 'ui/set', key: 'exportOpen', value: true })}
+          style={{
+            background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+            color: '#fff',
+            fontWeight: 700,
+            borderRadius: '999px',
+            padding: '6px 16px',
+            fontSize: '12px',
+            border: 'none',
+            boxShadow: '0 4px 12px rgba(2, 132, 199, 0.25)'
+          }}
         >
-          <Icon.Export /> Export
+          <Icon.Export size={13} style={{ stroke: '#fff' }} /> Export
         </button>
-        <div className="cc-history" title="Undo history depth">{historyDepth}/50</div>
+
+        {/* User profile avatar style */}
+        <div style={{
+          width: '28px',
+          height: '28px',
+          borderRadius: '50%',
+          background: '#27272a',
+          color: '#fff',
+          fontWeight: 'bold',
+          fontSize: '11px',
+          display: 'grid',
+          placeItems: 'center',
+          border: '1px solid #3f3f46',
+          cursor: 'pointer'
+        }} title="User Profile">
+          U
+        </div>
+
+        <div className="cc-history" title="Undo history depth" style={{ fontSize: '10px', padding: '2px 6px' }}>
+          {historyDepth}/50
+        </div>
       </div>
     </header>
   );

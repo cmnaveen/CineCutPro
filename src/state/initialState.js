@@ -113,7 +113,8 @@ export const initialState = {
     contextMenu: null,   // { x, y, clipId } when right-click open
     rubberBand: null,    // { x0, y0, x1, y1 } during drag
     monitorMode: 'dual', // 'dual' | 'single' — Source + Program vs Program only
-    fitToWindow: false   // when true, timeline pps auto-fits content to viewport
+    fitToWindow: false,  // when true, timeline pps auto-fits content to viewport
+    projectSettingsOpen: false
   },
 
   /* ---------- Toasts ---------- */

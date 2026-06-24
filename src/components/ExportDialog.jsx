@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useEditor } from '../state/EditorContext.jsx';
 import { Icon } from './icons/IconSet.jsx';
 import { mediaRenderer } from '../engine/mediaRenderer.js';
+import { audioEngine } from '../engine/audioEngine.js';
 import { formatTC } from '../engine/timecode.js';
 
 const FORMAT_OPTIONS = [
@@ -47,9 +48,31 @@ export function ExportDialog() {
       alert('MediaRecorder is unavailable in this browser.');
       return;
     }
-    const canvas = document.querySelector('canvas.cc-program-canvas');
-    if (!canvas) return;
-    const stream = canvas.captureStream(state.project.fps);
+    const program = document.querySelector('canvas.cc-program-canvas');
+    if (!program) return;
+
+    // Composite the program canvas into a target-resolution export canvas,
+    // fit-scaled (letterboxed) so any chosen resolution looks correct.
+    const out = document.createElement('canvas');
+    out.width = res.w;
+    out.height = res.h;
+    const octx = out.getContext('2d', { alpha: false });
+    const drawFrame = () => {
+      octx.fillStyle = '#000';
+      octx.fillRect(0, 0, out.width, out.height);
+      const pw = program.width || 1920;
+      const ph = program.height || 1080;
+      const s = Math.min(out.width / pw, out.height / ph);
+      const dw = pw * s;
+      const dh = ph * s;
+      octx.drawImage(program, (out.width - dw) / 2, (out.height - dh) / 2, dw, dh);
+    };
+
+    const stream = out.captureStream(state.project.fps);
+    // Mux the live master audio mix in alongside the video track.
+    const audioStream = audioEngine.getExportStream();
+    if (audioStream) for (const tr of audioStream.getAudioTracks()) stream.addTrack(tr);
+
     let mime = format.mime;
     if (!MediaRecorder.isTypeSupported(mime)) {
       const fallback = FORMAT_OPTIONS.find((f) => MediaRecorder.isTypeSupported(f.mime));
@@ -69,25 +92,28 @@ export function ExportDialog() {
     };
     rec.onstop = () => {
       const blob = new Blob(chunksRef.current, { type: mime });
-      const url = URL.createObjectURL(blob);
-      setResultUrl(url);
+      setResultUrl(URL.createObjectURL(blob));
       setRecording(false);
     };
     recorderRef.current = rec;
 
-    // Rewind & play from 0; renderer composites every frame onto the canvas.
-    dispatch({ type: 'playback/setPlayhead', t: state.inPoint ?? 0 });
+    const inAt = state.inPoint ?? 0;
+    const endAt = state.outPoint ?? duration;
+    const span = Math.max(0.1, endAt - inAt);
+
+    // Rewind & play; renderer composites each frame, we copy it to `out`.
+    dispatch({ type: 'playback/setPlayhead', t: inAt });
     dispatch({ type: 'playback/play' });
     setRecording(true);
     setProgress(0);
     rec.start(250);
 
-    const endAt = state.outPoint ?? duration;
     const startedAt = performance.now();
     const tick = () => {
+      drawFrame();
       const elapsed = (performance.now() - startedAt) / 1000;
-      setProgress(Math.min(1, elapsed / Math.max(0.1, endAt - (state.inPoint ?? 0))));
-      if (rec.state === 'recording' && performance.now() - startedAt < (endAt - (state.inPoint ?? 0)) * 1000) {
+      setProgress(Math.min(1, elapsed / span));
+      if (rec.state === 'recording' && elapsed < span) {
         requestAnimationFrame(tick);
       } else if (rec.state === 'recording') {
         rec.stop();
@@ -95,7 +121,7 @@ export function ExportDialog() {
       }
     };
     requestAnimationFrame(tick);
-  }, [state.project.fps, format, bitrate, dispatch, state.inPoint, state.outPoint, duration]);
+  }, [state.project.fps, format, bitrate, dispatch, state.inPoint, state.outPoint, duration, res]);
 
   const cancel = useCallback(() => {
     if (recorderRef.current && recorderRef.current.state === 'recording') {

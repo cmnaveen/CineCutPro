@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useEditor } from '../state/EditorContext.jsx';
 import { Icon } from './icons/IconSet.jsx';
 import { formatHMS } from '../engine/timecode.js';
+import { putMedia } from '../engine/mediaStore.js';
 
 const kindFromFile = (file) => {
   if (file.type.startsWith('video/')) return 'video';
@@ -65,13 +66,17 @@ export function MediaLibrary() {
     async (files) => {
       const items = await Promise.all(
         Array.from(files).map(async (file) => {
+          const id = `med_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
           const src = URL.createObjectURL(file);
           const kind = kindFromFile(file);
           const meta = await probe(file, src, kind);
+          putMedia(id, file); // durable copy so the project survives a reload
           return {
+            id,
             name: file.name,
             kind,
             src,
+            persistent: true,
             duration: meta.duration,
             thumb: meta.thumb,
             meta: {

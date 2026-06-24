@@ -1,0 +1,172 @@
+/* ─────────────────────────────────────────────────────────────────────
+ * Styles for the v1.1 "pro" additions:
+ *   keyframe editor rows · transition editor · project settings · error boundary
+ * Imported after the base sheets so a few targeted overrides win.
+ * ───────────────────────────────────────────────────────────────────── */
+
+/* ── Keyframe editor rows (channel | time | value | easing | delete) ── */
+.cc-keys__row {
+  grid-template-columns: 1fr auto auto auto auto;
+  align-items: center;
+}
+.cc-keys__ease {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 5px;
+  background: hsl(var(--hue-base) 28% 12% / .8);
+  border: 1px solid var(--line-2);
+  color: var(--text-2);
+}
+.cc-keys__del {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  line-height: 1;
+  transition: color .15s, background .15s, border-color .15s;
+}
+.cc-keys__del:hover {
+  color: var(--bad);
+  border-color: hsl(var(--hue-bad) 80% 30% / .6);
+  background: hsl(var(--hue-bad) 80% 30% / .12);
+}
+
+/* ── Transition editor ──────────────────────────────────────────────── */
+.cc-section--transitions {
+  border-top: 1px solid var(--line-2);
+  margin-top: 6px;
+}
+.cc-transition-edit {
+  margin-bottom: 8px;
+}
+.cc-transition-edit .cc-field--row select {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Shared text input used by project settings */
+.cc-input {
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: var(--r-2);
+  background: hsl(var(--hue-base) 28% 9% / .7);
+  border: 1px solid var(--line-2);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12px;
+}
+.cc-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: hsl(var(--hue-base) 28% 11% / .9);
+}
+
+/* ── Project settings modal ─────────────────────────────────────────── */
+.cc-project-settings {
+  width: min(520px, 92vw);
+}
+.cc-project-settings__body {
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cc-project-settings__res {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.cc-project-settings__res .cc-export__option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+}
+.cc-project-settings__res .cc-export__option em {
+  color: var(--text-3);
+  font-style: normal;
+  font-size: 10px;
+  margin-left: 0;
+}
+.cc-project-settings__custom {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.cc-project-settings__footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--line-2);
+}
+
+/* ── Error boundary ─────────────────────────────────────────────────── */
+.cc-errboundary {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: radial-gradient(120% 120% at 50% 0%, hsl(var(--hue-base) 35% 10%), hsl(var(--hue-base) 40% 5%));
+}
+.cc-errboundary__card {
+  max-width: 560px;
+  width: 100%;
+  background: hsl(var(--hue-base) 30% 9% / .96);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-4);
+  padding: 26px 28px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .55);
+}
+.cc-errboundary__badge {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--bad);
+  background: hsl(var(--hue-bad) 80% 30% / .15);
+  border: 1px solid hsl(var(--hue-bad) 80% 40% / .5);
+  margin-bottom: 14px;
+}
+.cc-errboundary__card h1 {
+  font-family: var(--font-display);
+  font-size: 22px;
+  margin: 0 0 8px;
+}
+.cc-errboundary__msg {
+  color: var(--text-2);
+  margin: 0 0 12px;
+}
+.cc-errboundary__stack {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+  background: hsl(var(--hue-base) 28% 6% / .8);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-2);
+  padding: 10px 12px;
+  overflow: auto;
+  max-height: 160px;
+  white-space: pre-wrap;
+}
+.cc-errboundary__actions {
+  display: flex;
+  gap: 10px;
+  margin: 16px 0 10px;
+}
+.cc-errboundary__hint {
+  color: var(--text-3);
+  font-size: 12px;
+  margin: 0;
+}

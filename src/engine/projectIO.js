@@ -77,3 +77,31 @@ export function pickProjectFile() {
     input.click();
   });
 }
+
+/* ----- Autosave (localStorage) -----
+ * Persists the same slices as a saved project so a crash/reload restores work.
+ * Media blobs are rehydrated separately from IndexedDB (see engine/mediaStore). */
+const AUTOSAVE_KEY = 'cinecutpro:autosave';
+
+export function writeAutosave(state) {
+  try {
+    localStorage.setItem(AUTOSAVE_KEY, exportProject(state));
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+export function readAutosave() {
+  try {
+    const text = localStorage.getItem(AUTOSAVE_KEY);
+    if (!text) return null;
+    return importProjectText(text);
+  } catch (_) {
+    return null;
+  }
+}
+
+export function clearAutosave() {
+  try { localStorage.removeItem(AUTOSAVE_KEY); } catch (_) {}
+}

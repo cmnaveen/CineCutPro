@@ -23,6 +23,17 @@ const PROGRAM_H = 1080;
 // often, so the whole component tree no longer re-renders once per frame.
 const PUBLISH_INTERVAL = 1 / 20; // seconds (~20 Hz playhead updates to React)
 
+// Keyframe easing curves. The TARGET keyframe's `easing` shapes the segment
+// leading into it; 'hold' keeps the previous value until the target (step).
+const EASE = {
+  linear: (t) => t,
+  easeIn: (t) => t * t,
+  easeOut: (t) => 1 - (1 - t) * (1 - t),
+  easeInOut: (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2),
+  hold: () => 0
+};
+const applyEase = (name, t) => (EASE[name] || EASE.linear)(t);
+
 class MediaRenderer {
   constructor() {
     this.programCanvas = null;
@@ -134,7 +145,7 @@ class MediaRenderer {
     ].join(' ');
   }
 
-  /** Linear interpolation of keyframed channel value at time `localT` (clip-local seconds). */
+  /** Interpolate a keyframed channel at clip-local time `localT`, honoring per-keyframe easing. */
   _keyframeValue(clip, channel, defaultValue, localT) {
     const kfs = (clip.keyframes ?? []).filter((k) => k.channel === channel);
     if (!kfs.length) return defaultValue;
@@ -145,7 +156,8 @@ class MediaRenderer {
       const a = kfs[i - 1];
       const b = kfs[i];
       if (localT >= a.time && localT <= b.time) {
-        const p = (localT - a.time) / (b.time - a.time || 1);
+        const raw = (localT - a.time) / (b.time - a.time || 1);
+        const p = applyEase(b.easing, raw);
         return a.value + (b.value - a.value) * p;
       }
     }

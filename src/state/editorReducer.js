@@ -91,6 +91,8 @@ export function reducer(state, action) {
       return { ...state, project: { ...state.project, dirty: false } };
     case 'project/markDirty':
       return { ...state, project: { ...state.project, dirty: true } };
+    case 'project/update':
+      return { ...state, project: { ...state.project, ...action.patch, dirty: true } };
 
     /* ===== Media bin ===== */
     case 'media/add': {
@@ -118,6 +120,9 @@ export function reducer(state, action) {
       };
       return { ...state, media: state.media.concat([sub]) };
     }
+    case 'media/update':
+      // Non-undoable: used to (re)attach blob src after IndexedDB rehydration.
+      return { ...state, media: state.media.map((m) => (m.id === action.id ? { ...m, ...action.patch } : m)) };
 
     /* ===== Source monitor ===== */
     case 'source/load':
@@ -224,6 +229,28 @@ export function reducer(state, action) {
       }
       return { ...state, clips: state.clips.map((c) => (c.id === target.id ? moved : c)) };
     }
+    case 'clip/moveSelection': {
+      // Move every selected clip so the dragged anchor lands at `action.start`,
+      // keeping the others' relative offsets. Idempotent across drag updates.
+      const ids = action.ids?.length ? action.ids : state.selectedClipIds;
+      if (!ids.length) return state;
+      const idSet = new Set(ids);
+      const sel = state.clips.filter((c) => idSet.has(c.id));
+      if (!sel.length) return state;
+      const anchor = state.clips.find((c) => c.id === action.anchorId) ?? sel[0];
+      const targetStart = Math.max(0, snapValue(action.start, state.snap, state.pixelsPerSecond));
+      let delta = targetStart - anchor.start;
+      const minStart = Math.min(...sel.map((c) => c.start));
+      if (minStart + delta < 0) delta = -minStart;          // clamp earliest at 0
+      if (Math.abs(delta) < 1e-6) return state;
+      const moved = sel.map((c) => ({ ...c, start: c.start + delta, end: c.end + delta }));
+      for (const m of moved) {
+        const peers = state.clips.filter((c) => !idSet.has(c.id) && c.trackId === m.trackId);
+        if (peers.some((p) => overlaps(p, m))) return state; // refuse to overlap others
+      }
+      const byId = new Map(moved.map((m) => [m.id, m]));
+      return { ...state, clips: state.clips.map((c) => byId.get(c.id) ?? c) };
+    }
 
     case 'clip/trim': {
       const target = state.clips.find((c) => c.id === action.id);
@@ -319,6 +346,20 @@ export function reducer(state, action) {
         ...state,
         clips: state.clips.map((c) => (c.id === action.id ? { ...c, ...action.patch } : c))
       };
+    case 'clip/setSpeed': {
+      const target = state.clips.find((c) => c.id === action.id);
+      if (!target) return state;
+      const speed = clamp(action.speed, 0.25, 4);
+      const srcLen = (target.srcOut ?? target.srcIn + (target.end - target.start)) - target.srcIn;
+      const newDur = Math.max(0.1, srcLen / speed); // faster speed => shorter timeline span
+      const next = { ...target, speed, end: target.start + newDur };
+      if (next.keyframes?.length) {
+        next.keyframes = next.keyframes.map((k) => (k.time > newDur ? { ...k, time: newDur } : k));
+      }
+      const peers = state.clips.filter((c) => c.id !== target.id && c.trackId === target.trackId);
+      if (peers.some((p) => overlaps(p, next))) return state;
+      return { ...state, clips: state.clips.map((c) => (c.id === target.id ? next : c)) };
+    }
 
     case 'clip/updateTransform':
       return {
@@ -365,6 +406,22 @@ export function reducer(state, action) {
       return {
         ...state,
         clips: state.clips.map((c) => (c.id === action.id ? { ...c, keyframes: [] } : c))
+      };
+    case 'clip/removeKeyframe':
+      return {
+        ...state,
+        clips: state.clips.map((c) =>
+          c.id === action.id ? { ...c, keyframes: (c.keyframes ?? []).filter((_, i) => i !== action.index) } : c
+        )
+      };
+    case 'clip/updateKeyframe':
+      return {
+        ...state,
+        clips: state.clips.map((c) =>
+          c.id === action.id
+            ? { ...c, keyframes: (c.keyframes ?? []).map((k, i) => (i === action.index ? { ...k, ...action.patch } : k)) }
+            : c
+        )
       };
 
     /* ===== Transitions ===== */
@@ -527,5 +584,10 @@ export const HISTORY_ACTIONS = new Set([
   'transition/clear',
   'project/rename',
   'project/loadAll',
-  'track/setHeight'
+  'track/setHeight',
+  'project/update',
+  'clip/moveSelection',
+  'clip/setSpeed',
+  'clip/removeKeyframe',
+  'clip/updateKeyframe'
 ]);

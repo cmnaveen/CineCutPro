@@ -1,7 +1,9 @@
-import React, { createContext, useCallback, useContext, useMemo, useReducer, useRef } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
 import { initialState, FPS } from './initialState.js';
 import { reducer as baseReducer, HISTORY_ACTIONS } from './editorReducer.js';
 import { emptyHistory, pushHistory, undo as undoFn, redo as redoFn } from './history.js';
+import { readAutosave, writeAutosave } from '../engine/projectIO.js';
+import { getMedia } from '../engine/mediaStore.js';
 
 const EditorContext = createContext(null);
 
@@ -18,7 +20,10 @@ function reducer(state, action) {
 }
 
 export function EditorProvider({ children }) {
-  const [state, baseDispatch] = useReducer(reducer, initialState);
+  const [state, baseDispatch] = useReducer(reducer, initialState, (init) => {
+    const snap = readAutosave();
+    return snap ? { ...init, ...snap } : init;
+  });
   const historyRef = useRef(emptyHistory());
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -49,6 +54,32 @@ export function EditorProvider({ children }) {
       baseDispatch({ type: '__replace__', state: next });
     }
   }, []);
+
+  // Rehydrate IndexedDB-backed media: blob: src dies on reload, so refetch the
+  // stored file and mint a fresh object URL for any persistent item missing one.
+  const needsRehydrate = state.media
+    .filter((m) => m.persistent && !m.src)
+    .map((m) => m.id)
+    .join(',');
+  useEffect(() => {
+    if (!needsRehydrate) return;
+    let cancelled = false;
+    (async () => {
+      for (const id of needsRehydrate.split(',')) {
+        const blob = await getMedia(id);
+        if (blob && !cancelled) {
+          dispatch({ type: 'media/update', id, patch: { src: URL.createObjectURL(blob) } });
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [needsRehydrate, dispatch]);
+
+  // Debounced autosave of the persistent project slices.
+  useEffect(() => {
+    const id = setTimeout(() => writeAutosave(stateRef.current), 800);
+    return () => clearTimeout(id);
+  }, [state.project, state.media, state.tracks, state.clips, state.transitions, state.inPoint, state.outPoint, state.master, state.analyzer]);
 
   const selectedClips = useMemo(
     () => state.clips.filter((c) => state.selectedClipIds.includes(c.id)),
