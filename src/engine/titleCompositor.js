@@ -15,6 +15,7 @@ import { resolveMotion } from './textMotion.js';
 
 export const TITLE_PRESETS = [
   /* Static presets */
+  { id: 'plain',    label: 'Standard Text',     sub: 'clean custom styling',     kind: 'static' },
   { id: 'glass',    label: 'Apple Glass',       sub: 'refractive glassmorphism', kind: 'static' },
   { id: 'neon',     label: 'Neon Glow',         sub: 'vibrant outer/inner glow', kind: 'static' },
   { id: 'silver',   label: 'Liquid Silver',     sub: 'chrome reflection bevel',  kind: 'static' },
@@ -38,7 +39,18 @@ const DEFAULT_OPTS = {
   align: 'center',
   valign: 'middle',
   color: '#ffffff',
-  letterSpacing: 0
+  letterSpacing: 0,
+  bgEnable: false,
+  bgColor: 'rgba(0,0,0,0.5)',
+  bgPadding: 15,
+  bgBorderRadius: 6,
+  strokeWidth: 0,
+  strokeColor: '#000000',
+  shadowEnable: false,
+  shadowColor: 'rgba(0,0,0,0.5)',
+  shadowBlur: 6,
+  shadowOffsetX: 3,
+  shadowOffsetY: 3
 };
 
 const fontString = (o) => `${o.weight} ${o.size}px "${o.font}", system-ui, sans-serif`;
@@ -56,6 +68,7 @@ const measure = (ctx, text, font) => {
 /** Compute glyph baseline x/y given align + valign. */
 function placeText(ctx, text, opts) {
   const font = fontString(opts);
+  ctx.letterSpacing = `${opts.letterSpacing ?? 0}px`;
   const m = measure(ctx, text, font);
   const cw = ctx.canvas.width;
   const ch = ctx.canvas.height;
@@ -74,12 +87,12 @@ function placeText(ctx, text, opts) {
 }
 
 /** Box around the glyphs in canvas coordinates. */
-export function titleBounds(opts) {
+export function titleBounds(opts, projectW = 1920, projectH = 1080) {
   const o = { ...DEFAULT_OPTS, ...opts };
-  // Use an offscreen canvas at 1920x1080 — matches the render target.
+  // Use an offscreen canvas at project dimensions — matches the render target.
   const c = document.createElement('canvas');
-  c.width = 1920;
-  c.height = 1080;
+  c.width = projectW;
+  c.height = projectH;
   const ctx = c.getContext('2d');
   const p = placeText(ctx, o.text, o);
   return {
@@ -412,6 +425,61 @@ function drawGrunge(ctx, opts) {
     ctx.fillRect(px, py, Math.random() * 2, Math.random() * 2);
   }
   ctx.restore();
+}
+
+function drawPlain(ctx, opts) {
+  const o = { ...DEFAULT_OPTS, ...opts };
+  const font = fontString(o);
+
+  ctx.save();
+  ctx.font = font;
+  ctx.textBaseline = 'alphabetic';
+  ctx.letterSpacing = `${o.letterSpacing ?? 0}px`;
+
+  const { font: _, x, y, width, height, ascent } = placeText(ctx, o.text, o);
+
+  // 1. Background scrim box
+  if (o.bgEnable && o.bgColor && o.bgColor !== 'transparent') {
+    const padX = o.bgPadding ?? (o.size * 0.2);
+    const padY = o.bgPadding ?? (o.size * 0.1);
+    const bx = x - padX;
+    const by = y - ascent - padY;
+    const bw = width + padX * 2;
+    const bh = height + padY * 2;
+    const radius = o.bgBorderRadius ?? 6;
+
+    ctx.save();
+    ctx.fillStyle = o.bgColor;
+    roundRect(ctx, bx, by, bw, bh, radius);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // 2. Drop shadow
+  ctx.save();
+  if (o.shadowEnable && o.shadowColor) {
+    ctx.shadowColor = o.shadowColor;
+    ctx.shadowBlur = o.shadowBlur ?? 6;
+    ctx.shadowOffsetX = o.shadowOffsetX ?? 3;
+    ctx.shadowOffsetY = o.shadowOffsetY ?? 3;
+  }
+
+  // 3. Text outline / stroke
+  if (o.strokeWidth && o.strokeWidth > 0 && o.strokeColor) {
+    ctx.save();
+    ctx.lineWidth = o.strokeWidth;
+    ctx.strokeStyle = o.strokeColor;
+    ctx.lineJoin = 'round';
+    ctx.strokeText(o.text, x, y);
+    ctx.restore();
+  }
+
+  // 4. Fill text
+  ctx.fillStyle = o.color ?? '#ffffff';
+  ctx.fillText(o.text, x, y);
+
+  ctx.restore(); // restore for shadow
+  ctx.restore(); // restore for base font
 }
 
 /* ─────────────────────────────────────────────────────────── */
@@ -826,6 +894,7 @@ function wrap(ctx, text, maxW) {
 /* ─────────────────────────────────────────────────────────── */
 
 const PRESET_FN = {
+  plain: drawPlain,
   glass: drawGlass,
   neon: drawNeon,
   silver: drawSilver,
@@ -848,7 +917,7 @@ const PRESET_FN = {
  *   clipFrac → horizontal reveal wipe (0 invisible → 1 fully shown)
  */
 export function drawTitle(ctx, opts, bg, time = 0, clipDur = 0) {
-  const fn = PRESET_FN[opts?.preset] ?? drawGlass;
+  const fn = PRESET_FN[opts?.preset] ?? drawPlain;
   const m = clipDur > 0 ? resolveMotion(opts?.motion, time, clipDur) : null;
   if (!m) {
     fn(ctx, opts, bg, time);

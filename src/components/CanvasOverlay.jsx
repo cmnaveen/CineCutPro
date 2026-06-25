@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useEditor } from '../state/EditorContext.jsx';
 import { titleBounds } from '../engine/titleCompositor.js';
-import { PROGRAM_W, PROGRAM_H } from '../engine/mediaRenderer.js';
 
 /**
  * Direct-manipulation overlay sat on top of the Program canvas.
@@ -80,6 +79,9 @@ export function CanvasOverlay() {
     [active, contentRect, dispatch]
   );
 
+  const projectW = state.project.width || 1920;
+  const projectH = state.project.height || 1080;
+
   const startScaleDrag = useCallback(
     (e, anchor) => {
       if (!active || !contentRect) return;
@@ -88,8 +90,8 @@ export function CanvasOverlay() {
       const tx = active.transform.x ?? 0;
       const ty = active.transform.y ?? 0;
       const startScale = active.transform.scale ?? 1;
-      const centerCanvasX = PROGRAM_W / 2 + tx;
-      const centerCanvasY = PROGRAM_H / 2 + ty;
+      const centerCanvasX = projectW / 2 + tx;
+      const centerCanvasY = projectH / 2 + ty;
       const center = canvasToDom(centerCanvasX, centerCanvasY, contentRect);
       const startDist = Math.hypot(e.clientX - center.x, e.clientY - center.y);
       const move = (ev) => {
@@ -121,7 +123,7 @@ export function CanvasOverlay() {
       const tx = active.transform.x ?? 0;
       const ty = active.transform.y ?? 0;
       const startRot = active.transform.rotation ?? 0;
-      const center = canvasToDom(PROGRAM_W / 2 + tx, PROGRAM_H / 2 + ty, contentRect);
+      const center = canvasToDom(projectW / 2 + tx, projectH / 2 + ty, contentRect);
       const startAng = Math.atan2(e.clientY - center.y, e.clientX - center.x);
       const move = (ev) => {
         const a = Math.atan2(ev.clientY - center.y, ev.clientX - center.x);
@@ -147,7 +149,7 @@ export function CanvasOverlay() {
   if (!contentRect || !active) return null;
 
   // Natural bbox (in canvas coords) before clip transform.
-  const nat = naturalBoundsFor(active);
+  const nat = naturalBoundsFor(active, projectW, projectH);
   const tx = active.transform.x ?? 0;
   const ty = active.transform.y ?? 0;
   const ts = active.transform.scale ?? 1;
@@ -158,12 +160,12 @@ export function CanvasOverlay() {
     [nat.x + nat.w,   nat.y],
     [nat.x + nat.w,   nat.y + nat.h],
     [nat.x,           nat.y + nat.h]
-  ].map(([px, py]) => transformPoint(px, py, tx, ty, ts, trot));
+  ].map(([px, py]) => transformPoint(px, py, tx, ty, ts, trot, projectW, projectH));
 
-  const center = transformPoint(nat.x + nat.w / 2, nat.y + nat.h / 2, tx, ty, ts, trot);
+  const center = transformPoint(nat.x + nat.w / 2, nat.y + nat.h / 2, tx, ty, ts, trot, projectW, projectH);
 
   // Rotation handle 60 canvas-units above the top edge midpoint, in rotated space.
-  const topMid = transformPoint(nat.x + nat.w / 2, nat.y - 60 / ts, tx, ty, ts, trot);
+  const topMid = transformPoint(nat.x + nat.w / 2, nat.y - 60 / ts, tx, ty, ts, trot, projectW, projectH);
 
   const labelText =
     active.kind === 'title' ? `TITLE · ${active.title?.preset ?? ''}` :
@@ -181,7 +183,7 @@ export function CanvasOverlay() {
         height: contentRect.height,
         pointerEvents: 'none'
       }}
-      viewBox={`0 0 ${PROGRAM_W} ${PROGRAM_H}`}
+      viewBox={`0 0 ${projectW} ${projectH}`}
       preserveAspectRatio="none"
     >
       {/* Body: draggable, semi-transparent fill so the user can click anywhere inside. */}
@@ -243,14 +245,14 @@ export function CanvasOverlay() {
 
 /* ─────────────────────────── Helpers ─────────────────────────── */
 
-/** Resolve where 1920×1080 content actually lives inside the canvas element. */
+/** Resolve where content actually lives inside the canvas element. */
 function canvasContentRect(canvasEl, stageEl) {
   if (!canvasEl || !stageEl) return null;
   const r = canvasEl.getBoundingClientRect();
   const s = stageEl.getBoundingClientRect();
   const elW = r.width;
   const elH = r.height;
-  const srcAR = PROGRAM_W / PROGRAM_H;
+  const srcAR = canvasEl.width / canvasEl.height;
   const elAR = elW / elH;
   let cw, ch;
   if (elAR > srcAR) { ch = elH; cw = ch * srcAR; }
@@ -260,7 +262,7 @@ function canvasContentRect(canvasEl, stageEl) {
     top:  (r.top  - s.top)  + (elH - ch) / 2,
     width: cw,
     height: ch,
-    scale: cw / PROGRAM_W
+    scale: cw / canvasEl.width
   };
 }
 
@@ -272,26 +274,26 @@ function canvasToDom(cx, cy, contentRect) {
 }
 
 /** Apply the same compositing transform the renderer uses, to a point. */
-function transformPoint(px, py, tx, ty, scale, rotDeg) {
-  let x = px - PROGRAM_W / 2;
-  let y = py - PROGRAM_H / 2;
+function transformPoint(px, py, tx, ty, scale, rotDeg, projectW, projectH) {
+  let x = px - projectW / 2;
+  let y = py - projectH / 2;
   x *= scale; y *= scale;
   const a = (rotDeg * Math.PI) / 180;
   const cos = Math.cos(a), sin = Math.sin(a);
   const rx = x * cos - y * sin;
   const ry = x * sin + y * cos;
-  return [PROGRAM_W / 2 + tx + rx, PROGRAM_H / 2 + ty + ry];
+  return [projectW / 2 + tx + rx, projectH / 2 + ty + ry];
 }
 
-function naturalBoundsFor(clip) {
+function naturalBoundsFor(clip, projectW, projectH) {
   if (clip.kind === 'title' && clip.title) {
-    const b = titleBounds(clip.title);
+    const b = titleBounds(clip.title, projectW, projectH);
     const pad = (clip.title.size ?? 96) * 0.12;
     return { x: b.x - pad, y: b.y - pad, w: b.w + pad * 2, h: b.h + pad * 2 };
   }
   if (clip.kind === 'subtitle') {
-    return { x: PROGRAM_W * 0.1, y: PROGRAM_H * 0.72, w: PROGRAM_W * 0.8, h: PROGRAM_H * 0.22 };
+    return { x: projectW * 0.1, y: projectH * 0.72, w: projectW * 0.8, h: projectH * 0.22 };
   }
   // Video / image — full frame
-  return { x: 0, y: 0, w: PROGRAM_W, h: PROGRAM_H };
+  return { x: 0, y: 0, w: projectW, h: projectH };
 }

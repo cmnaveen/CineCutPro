@@ -276,7 +276,7 @@ Checked items are done. When asked to "implement improvements," start at the top
 
 ### P2 — polish & UX
 - [x] **Project settings dialog** (name / fps / resolution presets + custom).
-- [ ] **Vertical / custom-aspect compositor** — make `mediaRenderer` + `CanvasOverlay` honor `project.width/height` (dynamic buffers), not just export.
+- [x] **Vertical / custom-aspect compositor** — make `mediaRenderer` + `CanvasOverlay` honor `project.width/height` (dynamic buffers), not just export.
 - [ ] **Eliminate the residual playback re-render** — the ~20 Hz echo still re-renders the tree; split the editor context (or drive playhead markers via direct DOM) for near-zero renders during playback.
 - [ ] **Accessibility pass** — modal focus trapping, ARIA roles/labels, focus rings.
 - [ ] **Thumbnail filmstrips** for video clips; richer waveform caching.
@@ -305,7 +305,7 @@ Checked items are done. When asked to "implement improvements," start at the top
 ## Changelog
 
 > Newest first. Add an entry whenever you complete a fix or a roadmap item.
-
+- **2026-06-24** — Dynamic aspect ratio compositor. **Renderer & Layout:** Updated `mediaRenderer.js`, `CanvasOverlay.jsx`, and `titleCompositor.js` to resize rendering canvases, track buffers, and active overlays dynamically based on the project dimensions (`state.project.width` / `state.project.height`). Drag bounding box coordinate translations and visual scaling guides now automatically reposition to stay centered. Verified statically via project ESLint rule checks.
 - **2026-06-23** — v1.1 "pro" pass. **Safety:** app-level `ErrorBoundary`; ESLint (flat, `no-undef`+hooks); Vitest suites for reducer + engine; track-zero guards. **Editing:** multi-clip drag (`clip/moveSelection`, anchor-based/idempotent); per-clip retime (`clip/setSpeed`); keyframe delete + easing (`clip/removeKeyframe`/`clip/updateKeyframe`, renderer `EASE`); inspector transition editor. **Project/output:** Project settings dialog (`project/update`, `ui.projectSettingsOpen`); export now muxes audio (`audioEngine.getExportStream`) and fit-scales to the chosen resolution. **Persistence:** IndexedDB media store (`engine/mediaStore.js`), autosave + boot restore + blob rehydration (`media/update`), New project. New files: `ErrorBoundary.jsx`, `ProjectSettings.jsx`, `engine/mediaStore.js`, `styles/pro.css`, `eslint.config.js`, `vitest.config.js`, two `*.test.js`. Verified: 63 logic assertions on the real modules in an isolated VM + the Vitest suites.
 - **2026-06-23** — Fix: smooth playback (was "jumping frames"). The playhead was advanced through React ~60×/s, re-rendering the whole tree and starving the canvas/decoder; the renderer now owns the clock and echoes the playhead back ~20 Hz via `playback/tickPlayhead`, with `state.seekId` distinguishing user seeks from its own echo.
 - **2026-06-23** — Fix: declared the missing `innerRef` (`useRef(null)`) in `Timeline()` — an undeclared ref used during render threw `ReferenceError` and blanked the UI. Also authored this README.

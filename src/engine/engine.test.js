@@ -59,4 +59,7 @@ describe('registries', () => {
   it('every title preset declares a kind', () => {
     expect(TITLE_PRESETS.every((p) => p.kind === 'static' || p.kind === 'kinetic')).toBe(true);
   });
+  it('includes standard plain preset', () => {
+    expect(TITLE_PRESETS.find((p) => p.id === 'plain')).toBeTruthy();
+  });
 });

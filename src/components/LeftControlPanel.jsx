@@ -712,10 +712,10 @@ function AudioTabContent({ state, dispatch, query }) {
 /* ===== 5. TEXT TAB ===== */
 function TextTabContent({ state, dispatch, query }) {
   const presets = [
+    { id: 'plain', name: 'Standard Text', color: '#1c1c21', border: '1px dashed #3f3f46', textStyle: { color: '#ffffff' } },
     { id: 'glass', name: 'Glassmorphism', color: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.2)', textStyle: { textShadow: '0 4px 10px rgba(0,0,0,0.3)', color: '#fff' } },
-    { id: 'cyber', name: 'Cyber Neon Glow', color: '#09090b', border: '1px solid #a21caf', textStyle: { color: '#f43f5e', textShadow: '0 0 10px #f43f5e, 0 0 20px #e11d48' } },
-    { id: 'gold', name: 'Golden Premium', color: '#18181b', border: '1px solid #ca8a04', textStyle: { color: '#facc15', textShadow: '0 2px 4px rgba(0,0,0,0.5)' } },
-    { id: 'minimal', name: 'Minimal Light', color: '#fafafa', border: '1px solid #e4e4e7', textStyle: { color: '#18181b', fontWeight: 'bold' } }
+    { id: 'neon', name: 'Cyber Neon Glow', color: '#09090b', border: '1px solid #a21caf', textStyle: { color: '#f43f5e', textShadow: '0 0 10px #f43f5e, 0 0 20px #e11d48' } },
+    { id: 'gold', name: 'Golden Premium', color: '#18181b', border: '1px solid #ca8a04', textStyle: { color: '#facc15', textShadow: '0 2px 4px rgba(0,0,0,0.5)' } }
   ];
 
   const addText = (preset) => {

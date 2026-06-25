@@ -84,7 +84,7 @@ export function Inspector() {
           )}
 
           {activeTab === 'background' && (
-            <BackgroundPanel clip={clip} dispatch={dispatch} />
+            <BackgroundPanel clip={clip} dispatch={dispatch} state={state} />
           )}
 
           {activeTab === 'smart' && (
@@ -145,6 +145,9 @@ function BasicPanel({ clip, state, dispatch }) {
   const f = clip.filters;
   const updFilters = (patch) => dispatch({ type: 'clip/updateFilters', id: clip.id, patch });
 
+  const title = clip.title || {};
+  const updTitle = (patch) => dispatch({ type: 'clip/updateTitle', id: clip.id, patch });
+
   return (
     <div className="cc-section" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
       {/* If it's a Text Clip, render Text options directly under Basic */}
@@ -154,35 +157,114 @@ function BasicPanel({ clip, state, dispatch }) {
           <textarea
             className="cc-textarea"
             rows={2}
-            value={clip.title?.text || ''}
-            onChange={(e) => dispatch({ type: 'clip/updateTitle', id: clip.id, patch: { text: e.target.value } })}
-            style={{ width: '100%', background: '#1c1c21', border: '1px solid #3f3f46', color: '#fff', borderRadius: '6px', padding: '6px' }}
+            value={title.text || ''}
+            onChange={(e) => updTitle({ text: e.target.value })}
+            style={{ width: '100%', background: '#1c1c21', border: '1px solid #3f3f46', color: '#fff', borderRadius: '6px', padding: '6px', resize: 'vertical' }}
           />
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '10px' }}>
             <label className="cc-field" style={{ margin: 0 }}>
               <span className="cc-field__label">Font family</span>
               <select 
-                value={clip.title?.font || 'Inter'} 
-                onChange={(e) => dispatch({ type: 'clip/updateTitle', id: clip.id, patch: { font: e.target.value } })}
+                value={title.font || 'Inter'} 
+                onChange={(e) => updTitle({ font: e.target.value })}
                 style={{ background: '#1c1c21', color: '#fff' }}
               >
                 <option value="Inter">Inter</option>
+                <option value="Roboto">Roboto</option>
+                <option value="Playfair Display">Playfair Display</option>
+                <option value="Montserrat">Montserrat</option>
+                <option value="Oswald">Oswald</option>
+                <option value="Outfit">Outfit</option>
+                <option value="Pacifico">Pacifico</option>
                 <option value="Space Grotesk">Space Grotesk</option>
                 <option value="JetBrains Mono">JetBrains Mono</option>
-                <option value="Roboto">Roboto</option>
               </select>
             </label>
             <label className="cc-field" style={{ margin: 0 }}>
               <span className="cc-field__label">Font weight</span>
               <select 
-                value={clip.title?.weight || 600} 
-                onChange={(e) => dispatch({ type: 'clip/updateTitle', id: clip.id, patch: { weight: parseInt(e.target.value, 10) } })}
+                value={title.weight || 600} 
+                onChange={(e) => updTitle({ weight: parseInt(e.target.value, 10) })}
                 style={{ background: '#1c1c21', color: '#fff' }}
               >
-                {[300, 400, 500, 600, 700, 800].map(w => <option key={w} value={w}>{w}</option>)}
+                {[300, 400, 500, 600, 700, 800, 900].map(w => <option key={w} value={w}>{w}</option>)}
               </select>
             </label>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '10px' }}>
+            <label className="cc-field" style={{ margin: 0 }}>
+              <span className="cc-field__label">Style Preset</span>
+              <select 
+                value={title.preset || 'plain'} 
+                onChange={(e) => updTitle({ preset: e.target.value })}
+                style={{ background: '#1c1c21', color: '#fff' }}
+              >
+                <option value="plain">Standard Text</option>
+                {TITLE_PRESETS.filter(tp => tp.id !== 'plain').map(tp => (
+                  <option key={tp.id} value={tp.id}>{tp.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="cc-field" style={{ margin: 0, display: 'flex', flexDirection: 'column' }}>
+              <span className="cc-field__label">Text Color</span>
+              <input 
+                type="color" 
+                value={title.color || '#ffffff'} 
+                onChange={(e) => updTitle({ color: e.target.value })}
+                style={{ background: 'none', border: 'none', width: '100%', height: '28px', cursor: 'pointer', padding: 0 }}
+              />
+            </label>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '10px' }}>
+            <div>
+              <span className="cc-field__label" style={{ fontSize: '11px', color: '#a1a1aa' }}>H Align</span>
+              <div style={{ display: 'flex', background: '#1c1c21', borderRadius: '4px', padding: '2px', marginTop: '4px' }}>
+                {['left', 'center', 'right'].map(align => (
+                  <button
+                    key={align}
+                    onClick={() => updTitle({ align })}
+                    style={{
+                      flex: 1,
+                      padding: '4px',
+                      fontSize: '10px',
+                      background: title.align === align ? '#2563eb' : 'transparent',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '3px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {align.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <span className="cc-field__label" style={{ fontSize: '11px', color: '#a1a1aa' }}>V Align</span>
+              <div style={{ display: 'flex', background: '#1c1c21', borderRadius: '4px', padding: '2px', marginTop: '4px' }}>
+                {['top', 'middle', 'bottom'].map(valign => (
+                  <button
+                    key={valign}
+                    onClick={() => updTitle({ valign })}
+                    style={{
+                      flex: 1,
+                      padding: '4px',
+                      fontSize: '10px',
+                      background: title.valign === valign ? '#2563eb' : 'transparent',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '3px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {valign.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           <Slider 
@@ -190,10 +272,146 @@ function BasicPanel({ clip, state, dispatch }) {
             min={24} 
             max={240} 
             step={1} 
-            value={clip.title?.size || 64} 
+            value={title.size || 64} 
             suffix="px" 
-            onChange={(v) => dispatch({ type: 'clip/updateTitle', id: clip.id, patch: { size: v } })} 
+            onChange={(v) => updTitle({ size: v })} 
           />
+
+          <Slider 
+            label="Letter Spacing" 
+            min={-10} 
+            max={50} 
+            step={1} 
+            value={title.letterSpacing || 0} 
+            suffix="px" 
+            onChange={(v) => updTitle({ letterSpacing: v })} 
+          />
+
+          {/* Stroke / Outline */}
+          <div style={{ borderBottom: '1px solid #27272a', paddingBottom: '14px', paddingTop: '10px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', cursor: 'pointer' }}>
+              <input 
+                type="checkbox" 
+                checked={title.strokeWidth > 0} 
+                onChange={(e) => updTitle({ strokeWidth: e.target.checked ? 4 : 0, strokeColor: title.strokeColor || '#000000' })}
+              />
+              <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#fff' }}>Text Outline</span>
+            </label>
+            {title.strokeWidth > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingLeft: '20px' }}>
+                <label className="cc-field cc-field--row" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '11px', color: '#a1a1aa' }}>Outline Color</span>
+                  <input 
+                    type="color" 
+                    value={title.strokeColor || '#000000'} 
+                    onChange={(e) => updTitle({ strokeColor: e.target.value })}
+                  />
+                </label>
+                <Slider 
+                  label="Outline Width" 
+                  min={1} 
+                  max={15} 
+                  step={1} 
+                  value={title.strokeWidth} 
+                  suffix="px" 
+                  onChange={(v) => updTitle({ strokeWidth: v })} 
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Shadow */}
+          <div style={{ borderBottom: '1px solid #27272a', paddingBottom: '14px', paddingTop: '10px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', cursor: 'pointer' }}>
+              <input 
+                type="checkbox" 
+                checked={title.shadowEnable ?? false} 
+                onChange={(e) => updTitle({ shadowEnable: e.target.checked, shadowColor: title.shadowColor || 'rgba(0,0,0,0.5)' })}
+              />
+              <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#fff' }}>Drop Shadow</span>
+            </label>
+            {title.shadowEnable && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingLeft: '20px' }}>
+                <label className="cc-field cc-field--row" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '11px', color: '#a1a1aa' }}>Shadow Color</span>
+                  <input 
+                    type="color" 
+                    value={title.shadowColor?.startsWith('rgba') ? '#000000' : (title.shadowColor || '#000000')} 
+                    onChange={(e) => updTitle({ shadowColor: e.target.value })}
+                  />
+                </label>
+                <Slider 
+                  label="Blur" 
+                  min={0} 
+                  max={30} 
+                  step={1} 
+                  value={title.shadowBlur ?? 6} 
+                  suffix="px" 
+                  onChange={(v) => updTitle({ shadowBlur: v })} 
+                />
+                <Slider 
+                  label="Offset X" 
+                  min={-20} 
+                  max={20} 
+                  step={1} 
+                  value={title.shadowOffsetX ?? 3} 
+                  suffix="px" 
+                  onChange={(v) => updTitle({ shadowOffsetX: v })} 
+                />
+                <Slider 
+                  label="Offset Y" 
+                  min={-20} 
+                  max={20} 
+                  step={1} 
+                  value={title.shadowOffsetY ?? 3} 
+                  suffix="px" 
+                  onChange={(v) => updTitle({ shadowOffsetY: v })} 
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Background Scrim */}
+          <div style={{ paddingTop: '10px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', cursor: 'pointer' }}>
+              <input 
+                type="checkbox" 
+                checked={title.bgEnable ?? false} 
+                onChange={(e) => updTitle({ bgEnable: e.target.checked, bgColor: title.bgColor || 'rgba(0,0,0,0.5)' })}
+              />
+              <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#fff' }}>Background Box</span>
+            </label>
+            {title.bgEnable && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingLeft: '20px' }}>
+                <label className="cc-field cc-field--row" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '11px', color: '#a1a1aa' }}>Box Color</span>
+                  <input 
+                    type="color" 
+                    value={title.bgColor?.startsWith('rgba') ? '#000000' : (title.bgColor || '#000000')} 
+                    onChange={(e) => updTitle({ bgColor: e.target.value })}
+                  />
+                </label>
+                <Slider 
+                  label="Padding" 
+                  min={0} 
+                  max={50} 
+                  step={1} 
+                  value={title.bgPadding ?? 15} 
+                  suffix="px" 
+                  onChange={(v) => updTitle({ bgPadding: v })} 
+                />
+                <Slider 
+                  label="Corner Roundness" 
+                  min={0} 
+                  max={30} 
+                  step={1} 
+                  value={title.bgBorderRadius ?? 6} 
+                  suffix="px" 
+                  onChange={(v) => updTitle({ bgBorderRadius: v })} 
+                />
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -233,9 +451,13 @@ function BasicPanel({ clip, state, dispatch }) {
 }
 
 // 2. BACKGROUND PANEL
-function BackgroundPanel({ clip, dispatch }) {
-  const [bgType, setBgType] = useState('color');
-  const [bgColor, setBgColor] = useState('#000000');
+function BackgroundPanel({ clip, dispatch, state }) {
+  const p = state.project;
+  const bg = p.background ?? { type: 'color', color: '#05080f', blur: 15 };
+
+  const updBg = (patch) => {
+    dispatch({ type: 'project/update', patch: { background: { ...bg, ...patch } } });
+  };
 
   return (
     <div className="cc-section" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -243,44 +465,46 @@ function BackgroundPanel({ clip, dispatch }) {
       
       <div style={{ display: 'flex', gap: '8px' }}>
         <button 
-          className={`cc-pill ${bgType === 'color' ? 'is-on cc-pill--accent' : ''}`}
-          onClick={() => setBgType('color')}
+          className={`cc-pill ${bg.type === 'color' ? 'is-on cc-pill--accent' : ''}`}
+          onClick={() => updBg({ type: 'color' })}
         >
           Solid Color
         </button>
         <button 
-          className={`cc-pill ${bgType === 'blur' ? 'is-on cc-pill--accent' : ''}`}
-          onClick={() => setBgType('blur')}
+          className={`cc-pill ${bg.type === 'checkerboard' ? 'is-on cc-pill--accent' : ''}`}
+          onClick={() => updBg({ type: 'checkerboard' })}
+        >
+          Checkerboard
+        </button>
+        <button 
+          className={`cc-pill ${bg.type === 'blur' ? 'is-on cc-pill--accent' : ''}`}
+          onClick={() => updBg({ type: 'blur' })}
         >
           Blur Background
         </button>
       </div>
 
-      {bgType === 'color' && (
+      {bg.type === 'color' && (
         <label className="cc-field cc-field--row" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <span style={{ fontSize: '11px', color: '#a1a1aa' }}>Pick Color</span>
           <input 
             type="color" 
-            value={bgColor} 
-            onChange={(e) => {
-              setBgColor(e.target.value);
-              dispatch({ type: 'toast/push', kind: 'info', message: `Canvas background color set to ${e.target.value}` });
-            }}
+            value={bg.color || '#05080f'} 
+            onChange={(e) => updBg({ color: e.target.value })}
           />
         </label>
       )}
 
-      {bgType === 'blur' && (
-        <label className="cc-field">
-          <span className="cc-field__label">Blur Intensity</span>
-          <input 
-            type="range" 
-            min={0} 
-            max={30} 
-            defaultValue={15} 
-            onChange={(e) => dispatch({ type: 'toast/push', kind: 'info', message: `Canvas blur set to ${e.target.value}px` })}
-          />
-        </label>
+      {bg.type === 'blur' && (
+        <Slider 
+          label="Blur Intensity" 
+          min={0} 
+          max={30} 
+          step={1} 
+          value={bg.blur ?? 15} 
+          suffix="px" 
+          onChange={(v) => updBg({ blur: v })} 
+        />
       )}
     </div>
   );

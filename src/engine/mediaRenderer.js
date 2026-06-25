@@ -52,13 +52,15 @@ class MediaRenderer {
     this._publishAcc = 0;    // accumulator for throttled playhead publishing
     this.lastFrameStats = { drawCalls: 0, activeClips: 0, fps: 0 };
     this._fpsAcc = { frames: 0, time: 0 };
+    this.width = PROGRAM_W;
+    this.height = PROGRAM_H;
   }
 
   attachProgramCanvas(canvas) {
     this.programCanvas = canvas;
     if (canvas) {
-      canvas.width = PROGRAM_W;
-      canvas.height = PROGRAM_H;
+      canvas.width = this.width || PROGRAM_W;
+      canvas.height = this.height || PROGRAM_H;
       this.programCtx = canvas.getContext('2d', { alpha: false });
     } else {
       this.programCtx = null;
@@ -82,6 +84,10 @@ class MediaRenderer {
   setState(state) {
     const prevSeekId = this.currentState ? this.currentState.seekId : undefined;
     this.currentState = state;
+    if (state.project) {
+      this.width = state.project.width || PROGRAM_W;
+      this.height = state.project.height || PROGRAM_H;
+    }
     // Adopt React's playhead only on a genuine user seek (seekId changed) or
     // while paused; during playback the renderer's own clock is authoritative.
     if (!state.playing || state.seekId !== prevSeekId) {
@@ -108,9 +114,11 @@ class MediaRenderer {
 
   // ---------------------------------------------------------------------
   _makeBuffer() {
+    const w = this.width || PROGRAM_W;
+    const h = this.height || PROGRAM_H;
     const canvas = typeof OffscreenCanvas !== 'undefined'
-      ? new OffscreenCanvas(PROGRAM_W, PROGRAM_H)
-      : Object.assign(document.createElement('canvas'), { width: PROGRAM_W, height: PROGRAM_H });
+      ? new OffscreenCanvas(w, h)
+      : Object.assign(document.createElement('canvas'), { width: w, height: h });
     return { canvas, ctx: canvas.getContext('2d') };
   }
 
@@ -124,13 +132,32 @@ class MediaRenderer {
   }
 
   _ensureTransitionBuffers() {
-    if (this.activeTransitionBuffers) return this.activeTransitionBuffers;
+    const w = this.width || PROGRAM_W;
+    const h = this.height || PROGRAM_H;
+    if (this.activeTransitionBuffers) {
+      const { from, to } = this.activeTransitionBuffers;
+      if (from.canvas.width !== w || from.canvas.height !== h) {
+        from.canvas.width = w;
+        from.canvas.height = h;
+        to.canvas.width = w;
+        to.canvas.height = h;
+      }
+      return this.activeTransitionBuffers;
+    }
     this.activeTransitionBuffers = { from: this._makeBuffer(), to: this._makeBuffer() };
     return this.activeTransitionBuffers;
   }
 
   _ensureChromaScratch() {
-    if (this.chromaScratch) return this.chromaScratch;
+    const w = this.width || PROGRAM_W;
+    const h = this.height || PROGRAM_H;
+    if (this.chromaScratch) {
+      if (this.chromaScratch.canvas.width !== w || this.chromaScratch.canvas.height !== h) {
+        this.chromaScratch.canvas.width = w;
+        this.chromaScratch.canvas.height = h;
+      }
+      return this.chromaScratch;
+    }
     this.chromaScratch = this._makeBuffer();
     return this.chromaScratch;
   }
@@ -235,20 +262,22 @@ class MediaRenderer {
     const cy = sh * crop.top;
     const cw = sw * (1 - crop.left - crop.right);
     const ch = sh * (1 - crop.top - crop.bottom);
-    const targetAR = PROGRAM_W / PROGRAM_H;
+    const w = this.width || PROGRAM_W;
+    const h = this.height || PROGRAM_H;
+    const targetAR = w / h;
     const srcAR = cw / ch;
-    let dw = PROGRAM_W;
-    let dh = PROGRAM_H;
-    if (srcAR > targetAR) dh = PROGRAM_W / srcAR;
-    else dw = PROGRAM_H * srcAR;
+    let dw = w;
+    let dh = h;
+    if (srcAR > targetAR) dh = w / srcAR;
+    else dw = h * srcAR;
 
     const ck = clip.filters?.chromaKey;
     if (ck?.enabled) {
       const scratch = this._ensureChromaScratch();
-      scratch.ctx.clearRect(0, 0, PROGRAM_W, PROGRAM_H);
-      scratch.ctx.drawImage(el, cx, cy, cw, ch, (PROGRAM_W - dw) / 2, (PROGRAM_H - dh) / 2, dw, dh);
-      applyChromaKey(scratch.ctx, PROGRAM_W, PROGRAM_H, ck);
-      ctx.drawImage(scratch.canvas, -PROGRAM_W / 2, -PROGRAM_H / 2);
+      scratch.ctx.clearRect(0, 0, w, h);
+      scratch.ctx.drawImage(el, cx, cy, cw, ch, (w - dw) / 2, (h - dh) / 2, dw, dh);
+      applyChromaKey(scratch.ctx, w, h, ck);
+      ctx.drawImage(scratch.canvas, -w / 2, -h / 2);
     } else {
       ctx.drawImage(el, cx, cy, cw, ch, -dw / 2, -dh / 2, dw, dh);
     }
@@ -262,53 +291,59 @@ class MediaRenderer {
     const x = this._keyframeValue(clip, 'x', tr.x ?? 0, localT);
     const y = this._keyframeValue(clip, 'y', tr.y ?? 0, localT);
     const crop = tr.crop ?? { top: 0, right: 0, bottom: 0, left: 0 };
+    const w = this.width || PROGRAM_W;
+    const h = this.height || PROGRAM_H;
 
     ctx.save();
     ctx.globalAlpha = opacity;
     ctx.filter = this._filterFor(clip);
-    ctx.translate(PROGRAM_W / 2 + x, PROGRAM_H / 2 + y);
+    ctx.translate(w / 2 + x, h / 2 + y);
     ctx.rotate((rotation * Math.PI) / 180);
     ctx.scale(scale, scale);
 
     if (clip.kind === 'title' && clip.title) {
-      ctx.translate(-PROGRAM_W / 2, -PROGRAM_H / 2);
+      ctx.translate(-w / 2, -h / 2);
       drawTitle(ctx, clip.title, this.programCanvas, localT, clip.end - clip.start);
     } else if (clip.kind === 'subtitle') {
-      ctx.translate(-PROGRAM_W / 2, -PROGRAM_H / 2);
+      ctx.translate(-w / 2, -h / 2);
       drawSubtitle(ctx, clip.title ?? { text: '— subtitle —', valign: 'bottom' });
     } else if (media && media.kind === 'image') {
       const el = this.mediaElements.get(media.id);
       if (el) {
-        const sw = el.naturalWidth || el.width || PROGRAM_W;
-        const sh = el.naturalHeight || el.height || PROGRAM_H;
+        const sw = el.naturalWidth || el.width || w;
+        const sh = el.naturalHeight || el.height || h;
         const cx = sw * crop.left;
         const cy = sh * crop.top;
         const cw = sw * (1 - crop.left - crop.right);
         const ch = sh * (1 - crop.top - crop.bottom);
-        ctx.drawImage(el, cx, cy, cw, ch, -PROGRAM_W / 2, -PROGRAM_H / 2, PROGRAM_W, PROGRAM_H);
+        const srcAR = cw / ch;
+        const targetAR = w / h;
+        let dw = w;
+        let dh = h;
+        if (srcAR > targetAR) dh = w / srcAR;
+        else dw = h * srcAR;
+        ctx.drawImage(el, cx, cy, cw, ch, -dw / 2, -dh / 2, dw, dh);
       }
     } else if (media && media.kind === 'video') {
       const el = this.mediaElements.get(media.id);
       if (el) {
-        const sw = el.videoWidth || PROGRAM_W;
-        const sh = el.videoHeight || PROGRAM_H;
+        const sw = el.videoWidth || w;
+        const sh = el.videoHeight || h;
         this._drawVideoFrame(ctx, clip, media, el, sw, sh, crop);
       } else {
         ctx.fillStyle = '#1a2434';
-        ctx.fillRect(-PROGRAM_W / 2, -PROGRAM_H / 2, PROGRAM_W, PROGRAM_H);
+        ctx.fillRect(-w / 2, -h / 2, w, h);
       }
-    } else if (clip.kind === 'audio') {
-      // Audio clips render no visual.
     }
 
     const vig = clip.filters?.vignette ?? 0;
     if (vig > 0.001) {
       ctx.filter = 'none';
-      const g = ctx.createRadialGradient(0, 0, PROGRAM_W * 0.25, 0, 0, PROGRAM_W * 0.62);
+      const g = ctx.createRadialGradient(0, 0, w * 0.25, 0, 0, w * 0.62);
       g.addColorStop(0, 'rgba(0,0,0,0)');
       g.addColorStop(1, `rgba(0,0,0,${vig})`);
       ctx.fillStyle = g;
-      ctx.fillRect(-PROGRAM_W / 2, -PROGRAM_H / 2, PROGRAM_W, PROGRAM_H);
+      ctx.fillRect(-w / 2, -h / 2, w, h);
     }
 
     ctx.restore();
@@ -364,6 +399,15 @@ class MediaRenderer {
     const playing = state.playing;
     const rate = state.playbackRate ?? 1;
 
+    const w = this.width || PROGRAM_W;
+    const h = this.height || PROGRAM_H;
+
+    // Resize program canvas dynamically if project dimensions changed
+    if (this.programCanvas && (this.programCanvas.width !== w || this.programCanvas.height !== h)) {
+      this.programCanvas.width = w;
+      this.programCanvas.height = h;
+    }
+
     // ----- Playback clock: advance our own time, decoupled from React -----
     let publish = false;
     let atEnd = false;
@@ -395,18 +439,74 @@ class MediaRenderer {
 
     for (const fn of this.tickHandlers) fn({ t, dt, playing, rate, publish, atEnd });
 
-    this.programCtx.fillStyle = '#05080f';
-    this.programCtx.fillRect(0, 0, PROGRAM_W, PROGRAM_H);
-
-    const tracks = state.tracks.slice().reverse();
     const mediaById = new Map(state.media.map((m) => [m.id, m]));
+    const tracks = state.tracks.slice().reverse();
+
+    const bg = state.project.background ?? { type: 'color', color: '#05080f', blur: 15 };
+    if (bg.type === 'blur') {
+      const activeVisualClip = state.clips.find(c => {
+        if (c.start <= t && c.end > t) {
+          const media = mediaById.get(c.mediaId);
+          return media && (media.kind === 'video' || media.kind === 'image');
+        }
+        return false;
+      });
+
+      let drewBlur = false;
+      if (activeVisualClip) {
+        const media = mediaById.get(activeVisualClip.mediaId);
+        const el = this.mediaElements.get(media.id);
+        if (el) {
+          this.programCtx.save();
+          this.programCtx.filter = `blur(${bg.blur ?? 15}px) brightness(0.55)`;
+          const sw = el.videoWidth || el.naturalWidth || el.width || w;
+          const sh = el.videoHeight || el.naturalHeight || el.height || h;
+          const srcAR = sw / sh;
+          const targetAR = w / h;
+          let dw = w;
+          let dh = h;
+          if (srcAR < targetAR) {
+            dh = w / srcAR;
+          } else {
+            dw = h * srcAR;
+          }
+          this.programCtx.drawImage(el, (w - dw) / 2, (h - dh) / 2, dw, dh);
+          this.programCtx.restore();
+          drewBlur = true;
+        }
+      }
+
+      if (!drewBlur) {
+        this.programCtx.fillStyle = '#05080f';
+        this.programCtx.fillRect(0, 0, w, h);
+      }
+    } else if (bg.type === 'checkerboard') {
+      this.programCtx.fillStyle = '#0f1319';
+      this.programCtx.fillRect(0, 0, w, h);
+      this.programCtx.fillStyle = '#171c24';
+      const size = 32;
+      for (let yOffset = 0; yOffset < h; yOffset += size) {
+        for (let xOffset = (yOffset / size) % 2 === 0 ? 0 : size; xOffset < w; xOffset += size * 2) {
+          this.programCtx.fillRect(xOffset, yOffset, size, size);
+        }
+      }
+    } else {
+      this.programCtx.fillStyle = bg.color || '#05080f';
+      this.programCtx.fillRect(0, 0, w, h);
+    }
     let drawCalls = 0;
     let activeCount = 0;
 
     for (const track of tracks) {
       if (!track.visible) continue;
       const buf = this._ensureTrackBuffer(track.id);
-      buf.ctx.clearRect(0, 0, PROGRAM_W, PROGRAM_H);
+      
+      // Resize track buffer dynamically if project dimensions changed
+      if (buf.canvas.width !== w || buf.canvas.height !== h) {
+        buf.canvas.width = w;
+        buf.canvas.height = h;
+      }
+      buf.ctx.clearRect(0, 0, w, h);
 
       const clips = state.clips.filter((c) => c.trackId === track.id);
       const active = clips.filter((c) => c.start <= t && c.end > t);
@@ -431,12 +531,12 @@ class MediaRenderer {
         const local = (t - c.start) * (c.speed ?? 1);
         if (transition) {
           const tb = this._ensureTransitionBuffers();
-          tb.from.ctx.clearRect(0, 0, PROGRAM_W, PROGRAM_H);
-          tb.to.ctx.clearRect(0, 0, PROGRAM_W, PROGRAM_H);
+          tb.from.ctx.clearRect(0, 0, w, h);
+          tb.to.ctx.clearRect(0, 0, w, h);
           this._drawClipOnto(tb.from.ctx, transition.fromClip, mediaById.get(transition.fromClip.mediaId), local);
           this._drawClipOnto(tb.to.ctx, transition.toClip, mediaById.get(transition.toClip.mediaId), 0);
           const p = (t - transition.t0) / transition.duration;
-          runTransition(transition.kind, buf.ctx, tb.from.canvas, tb.to.canvas, p, PROGRAM_W, PROGRAM_H);
+          runTransition(transition.kind, buf.ctx, tb.from.canvas, tb.to.canvas, p, w, h);
           drawCalls += 3;
         } else {
           this._drawClipOnto(buf.ctx, c, mediaById.get(c.mediaId), local);
@@ -444,7 +544,7 @@ class MediaRenderer {
         }
       }
 
-      this.programCtx.drawImage(buf.canvas, 0, 0, PROGRAM_W, PROGRAM_H);
+      this.programCtx.drawImage(buf.canvas, 0, 0, w, h);
     }
 
     this.lastFrameStats.drawCalls = drawCalls;

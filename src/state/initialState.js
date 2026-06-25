@@ -58,7 +58,8 @@ export const initialState = {
     height: 1080,
     fps: FPS,
     createdAt: Date.now(),
-    dirty: false
+    dirty: false,
+    background: { type: 'color', color: '#05080f', blur: 15 }
   },
 
   /* ---------- Media bin ---------- */

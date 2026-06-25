@@ -11,18 +11,23 @@ const FORMAT_OPTIONS = [
   { id: 'mp4-h264',  label: 'MP4 · H.264',  mime: 'video/mp4;codecs=h264' }
 ];
 
-const RESOLUTIONS = [
-  { id: '1080p', label: '1920 × 1080', w: 1920, h: 1080 },
-  { id: '720p',  label: '1280 × 720',  w: 1280, h: 720 },
-  { id: '4k',    label: '3840 × 2160', w: 3840, h: 2160 }
-];
-
 export function ExportDialog() {
   const { state, dispatch, duration } = useEditor();
   const open = state.ui.exportOpen;
 
+  const p = state.project;
+  const currentRatio = p.width / p.height;
+  const isVertical = p.height > p.width;
+
+  const dynamicResolutions = [
+    { id: '720p', label: `${isVertical ? 720 : Math.round(720 * currentRatio)} × ${isVertical ? Math.round(720 / currentRatio) : 720}`, w: isVertical ? 720 : Math.round(720 * currentRatio), h: isVertical ? Math.round(720 / currentRatio) : 720 },
+    { id: '1080p', label: `${isVertical ? 1080 : Math.round(1080 * currentRatio)} × ${isVertical ? Math.round(1080 / currentRatio) : 1080}`, w: isVertical ? 1080 : Math.round(1080 * currentRatio), h: isVertical ? Math.round(1080 / currentRatio) : 1080 },
+    { id: '4k', label: `${isVertical ? 2160 : Math.round(2160 * currentRatio)} × ${isVertical ? Math.round(2160 / currentRatio) : 2160}`, w: isVertical ? 2160 : Math.round(2160 * currentRatio), h: isVertical ? Math.round(2160 / currentRatio) : 2160 }
+  ];
+
   const [format, setFormat] = useState(FORMAT_OPTIONS[0]);
-  const [res, setRes] = useState(RESOLUTIONS[0]);
+  const [selectedResId, setSelectedResId] = useState('1080p');
+  const res = dynamicResolutions.find((r) => r.id === selectedResId) || dynamicResolutions[1];
   const [bitrate, setBitrate] = useState(12); // Mbps
   const [recording, setRecording] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -160,11 +165,11 @@ export function ExportDialog() {
 
             <h4>Resolution</h4>
             <div className="cc-export__grid">
-              {RESOLUTIONS.map((r) => (
+              {dynamicResolutions.map((r) => (
                 <button
                   key={r.id}
                   className={`cc-export__option ${res.id === r.id ? 'is-on' : ''}`}
-                  onClick={() => setRes(r)}
+                  onClick={() => setSelectedResId(r.id)}
                   disabled={recording}
                 >
                   {r.label}
