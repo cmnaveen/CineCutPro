@@ -75,10 +75,20 @@ export function ProgramMonitor() {
     const seen = new Set();
     for (const m of state.media) {
       seen.add(m.id);
-      if (current.has(m.id)) continue;
+      const targetSrc = (state.project.proxyMode && m.proxyUrl) ? m.proxyUrl : m.src;
+
+      if (current.has(m.id)) {
+        const el = current.get(m.id);
+        if (el.tagName === 'VIDEO' && el.src !== targetSrc) {
+          el.src = targetSrc;
+          el.load();
+        }
+        continue;
+      }
+
       if (m.kind === 'video') {
         const v = document.createElement('video');
-        v.src = m.src;
+        v.src = targetSrc;
         v.playsInline = true;
         v.preload = 'auto';
         v.crossOrigin = 'anonymous';
@@ -112,7 +122,7 @@ export function ProgramMonitor() {
         current.delete(id);
       }
     }
-  }, [state.media]);
+  }, [state.media, state.project.proxyMode]);
 
   const playheadDur = useMemo(() => duration, [duration]);
 

@@ -4,6 +4,7 @@ import { Icon } from './icons/IconSet.jsx';
 import { mediaRenderer } from '../engine/mediaRenderer.js';
 import { audioEngine } from '../engine/audioEngine.js';
 import { formatTC } from '../engine/timecode.js';
+import { exportAndDownload } from '../engine/subtitleExporter.js';
 
 const FORMAT_OPTIONS = [
   { id: 'webm-vp9',  label: 'WebM · VP9',   mime: 'video/webm;codecs=vp9,opus' },
@@ -34,6 +35,7 @@ export function ExportDialog() {
   const [resultUrl, setResultUrl] = useState(null);
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
+  const orchestratorRef = useRef(null);
 
   const close = useCallback(() => {
     if (recording) return;
@@ -73,7 +75,8 @@ export function ExportDialog() {
       octx.drawImage(program, (out.width - dw) / 2, (out.height - dh) / 2, dw, dh);
     };
 
-    const stream = out.captureStream(state.project.fps);
+    const fps = state.project.fps || 30;
+    const stream = out.captureStream(fps);
     // Mux the live master audio mix in alongside the video track.
     const audioStream = audioEngine.getExportStream();
     if (audioStream) for (const tr of audioStream.getAudioTracks()) stream.addTrack(tr);
@@ -104,31 +107,45 @@ export function ExportDialog() {
 
     const inAt = state.inPoint ?? 0;
     const endAt = state.outPoint ?? duration;
-    const span = Math.max(0.1, endAt - inAt);
 
-    // Rewind & play; renderer composites each frame, we copy it to `out`.
-    dispatch({ type: 'playback/setPlayhead', t: inAt });
-    dispatch({ type: 'playback/play' });
     setRecording(true);
     setProgress(0);
-    rec.start(250);
+    rec.start();
 
-    const startedAt = performance.now();
-    const tick = () => {
-      drawFrame();
-      const elapsed = (performance.now() - startedAt) / 1000;
-      setProgress(Math.min(1, elapsed / span));
-      if (rec.state === 'recording' && elapsed < span) {
-        requestAnimationFrame(tick);
-      } else if (rec.state === 'recording') {
+    try {
+      const { RenderOrchestrator } = await import('../engine/renderWorker.js');
+      const orchestrator = new RenderOrchestrator({
+        fps,
+        width: res.w,
+        height: res.h,
+        onProgress: (p) => setProgress(p)
+      });
+      orchestratorRef.current = orchestrator;
+
+      await orchestrator.render(
+        state,
+        inAt,
+        endAt,
+        mediaRenderer,
+        (t) => {
+          drawFrame();
+        }
+      );
+    } catch (err) {
+      console.error(err);
+    } finally {
+      if (rec.state === 'recording') {
         rec.stop();
-        dispatch({ type: 'playback/pause' });
       }
-    };
-    requestAnimationFrame(tick);
-  }, [state.project.fps, format, bitrate, dispatch, state.inPoint, state.outPoint, duration, res]);
+      setRecording(false);
+      dispatch({ type: 'playback/setPlayhead', t: inAt });
+    }
+  }, [state, format, bitrate, dispatch, duration, res]);
 
   const cancel = useCallback(() => {
+    if (orchestratorRef.current) {
+      orchestratorRef.current.abort();
+    }
     if (recorderRef.current && recorderRef.current.state === 'recording') {
       recorderRef.current.stop();
     }
@@ -189,6 +206,33 @@ export function ExportDialog() {
                 disabled={recording}
               />
             </label>
+
+            <div style={{ marginTop: '20px', borderTop: '1px solid var(--line-2)', paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <h4 style={{ margin: 0, fontSize: '11px', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 'bold' }}>Export Subtitles</h4>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  className="cc-pill"
+                  onClick={() => exportAndDownload(state.clips, 'srt', state.project.name)}
+                  title="Download SRT captions"
+                >
+                  SRT
+                </button>
+                <button
+                  className="cc-pill"
+                  onClick={() => exportAndDownload(state.clips, 'vtt', state.project.name)}
+                  title="Download WebVTT captions"
+                >
+                  WebVTT
+                </button>
+                <button
+                  className="cc-pill"
+                  onClick={() => exportAndDownload(state.clips, 'ass', state.project.name, { width: state.project.width, height: state.project.height })}
+                  title="Download ASS styled captions"
+                >
+                  ASS (Styled)
+                </button>
+              </div>
+            </div>
           </div>
 
           <div className="cc-export__col cc-export__col--summary">

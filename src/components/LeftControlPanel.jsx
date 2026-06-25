@@ -224,6 +224,58 @@ function MediaTabContent({ state, dispatch, query }) {
     dispatch({ type: 'media/add', items });
   }, [dispatch]);
 
+  const handleDetectMediaScenes = async (mediaItem) => {
+    const video = document.createElement('video');
+    video.src = mediaItem.src;
+    video.muted = true;
+    video.preload = 'auto';
+
+    video.onloadedmetadata = async () => {
+      try {
+        dispatch({ type: 'toast/push', kind: 'info', message: `Analyzing "${mediaItem.name}" scenes...` });
+        const { detectScenes } = await import('../engine/sceneDetector.js');
+        const cuts = await detectScenes(video, {
+          startTime: 0,
+          endTime: video.duration || 60,
+          sensitivity: 0.5
+        });
+
+        if (!cuts || !cuts.length) {
+          dispatch({ type: 'toast/push', kind: 'info', message: 'No scene cuts detected.' });
+          return;
+        }
+
+        // Generate subclips
+        let currentIn = 0;
+        for (let i = 0; i <= cuts.length; i++) {
+          const currentOut = i < cuts.length ? cuts[i].time : (video.duration || 60);
+          dispatch({
+            type: 'media/addSubclip',
+            id: mediaItem.id,
+            inPoint: currentIn,
+            outPoint: currentOut
+          });
+          currentIn = currentOut;
+        }
+
+        dispatch({
+          type: 'toast/push',
+          kind: 'success',
+          message: `Scene detection complete! Created ${cuts.length + 1} subclips.`
+        });
+      } catch (err) {
+        console.error(err);
+        dispatch({ type: 'toast/push', kind: 'error', message: 'Scene detection failed: ' + err.message });
+      } finally {
+        video.remove();
+      }
+    };
+    video.onerror = () => {
+      dispatch({ type: 'toast/push', kind: 'error', message: 'Failed to load video source.' });
+      video.remove();
+    };
+  };
+
   const onFiles = (e) => {
     if (e.target.files?.length) ingest(e.target.files);
     e.target.value = '';
@@ -329,6 +381,19 @@ function MediaTabContent({ state, dispatch, query }) {
                 >
                   <Icon.Plus size={12} />
                 </button>
+                {m.kind === 'video' && (
+                  <button
+                    className="cc-icon-btn cc-icon-btn--xs"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDetectMediaScenes(m);
+                    }}
+                    title="Auto-split scenes into subclips"
+                    style={{ fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    🎬
+                  </button>
+                )}
                 <button
                   className="cc-icon-btn cc-icon-btn--xs cc-icon-btn--danger"
                   onClick={(e) => {

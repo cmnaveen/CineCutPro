@@ -342,6 +342,55 @@ export function reducer(state, action) {
       return { ...state, clips: out };
     }
 
+    case 'clip/multiBlade': {
+      const { clipId, times } = action;
+      if (!times || !times.length) return state;
+      const target = state.clips.find((c) => c.id === clipId);
+      if (!target) return state;
+
+      // Filter and sort times that are strictly inside the clip duration (timeline time)
+      const validTimes = times
+        .filter((t) => t > target.start && t < target.end)
+        .sort((a, b) => a - b);
+      if (!validTimes.length) return state;
+
+      const outClips = state.clips.filter((c) => c.id !== clipId);
+      const speed = target.speed ?? 1;
+
+      let currentStart = target.start;
+      let currentSrcIn = target.srcIn;
+      
+      const newSegments = [];
+      for (let i = 0; i <= validTimes.length; i++) {
+        const nextEnd = i < validTimes.length ? validTimes[i] : target.end;
+        const duration = nextEnd - currentStart;
+        const nextSrcOut = currentSrcIn + duration * speed;
+        
+        newSegments.push({
+          ...target,
+          id: i === 0 ? target.id : uid('clip'),
+          start: currentStart,
+          end: nextEnd,
+          srcIn: currentSrcIn,
+          srcOut: nextSrcOut,
+          transitions: {
+            in: i === 0 ? (target.transitions?.in ?? null) : null,
+            out: i === validTimes.length ? (target.transitions?.out ?? null) : null
+          }
+        });
+        
+        currentStart = nextEnd;
+        currentSrcIn = nextSrcOut;
+      }
+
+      let nextClips = outClips.concat(newSegments);
+      if (state.ui.timelineMode === 'magnetic') {
+        nextClips = packTrackMagnetic(nextClips, target.trackId);
+      }
+      return { ...state, clips: nextClips };
+    }
+
+
     case 'clip/delete': {
       const ids = action.ids?.length ? action.ids : state.selectedClipIds;
       if (!ids.length) return state;
@@ -393,6 +442,9 @@ export function reducer(state, action) {
       }
       return { ...state, clips: state.clips.concat(newClips), selectedClipIds: newIds };
     }
+
+    case 'clip/updateAll':
+      return { ...state, clips: action.clips };
 
     case 'clip/update':
       return {

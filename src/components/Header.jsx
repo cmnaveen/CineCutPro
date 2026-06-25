@@ -158,6 +158,21 @@ export function Header() {
           <Icon.Layers size={13} /> {state.ui.monitorMode === 'dual' ? 'Dual' : 'Single'}
         </button>
 
+        <button
+          className={`cc-chip ${state.ui.multicamOpen ? 'is-on' : ''}`}
+          onClick={() =>
+            dispatch({
+              type: 'ui/set',
+              key: 'multicamOpen',
+              value: !state.ui.multicamOpen
+            })
+          }
+          title="Toggle Multicam Grid"
+          style={{ fontSize: '11px', padding: '5px 10px' }}
+        >
+          🎬 Multicam
+        </button>
+
         <select
           value={state.ui.panelLayout}
           onChange={(e) => dispatch({ type: 'ui/set', key: 'panelLayout', value: e.target.value })}

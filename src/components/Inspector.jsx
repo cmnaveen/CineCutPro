@@ -90,7 +90,7 @@ export function Inspector() {
           )}
 
           {activeTab === 'smart' && (
-            <SmartPanel clip={clip} state={state} dispatch={dispatch} />
+            <SmartToolsPanel clip={clip} state={state} dispatch={dispatch} />
           )}
 
           {activeTab === 'effects' && (
@@ -516,37 +516,209 @@ function BackgroundPanel({ clip, dispatch, state }) {
   );
 }
 
-// 3. SMART TOOLS PANEL (Chroma key / Greenscreen)
-function SmartToolsPanel({ clip, dispatch }) {
+// 3. SMART TOOLS PANEL (Chroma key / Greenscreen / Stabilizer / Motion Tracker)
+function SmartToolsPanel({ clip, state, dispatch }) {
   const f = clip.filters;
   const updFilters = (patch) => dispatch({ type: 'clip/updateFilters', id: clip.id, patch });
   const updChroma = (patch) => updFilters({ chromaKey: { ...f.chromaKey, ...patch } });
 
+  const overlayClips = state.clips.filter(c => c.id !== clip.id && (c.kind === 'title' || c.kind === 'image'));
+  const [selectedOverlayId, setSelectedOverlayId] = useState('');
+  const [stabilizing, setStabilizing] = useState(false);
+  const [tracking, setTracking] = useState(false);
+
+  // Set default selected overlay if list changes
+  useEffect(() => {
+    if (overlayClips.length && !selectedOverlayId) {
+      setSelectedOverlayId(overlayClips[0].id);
+    }
+  }, [overlayClips, selectedOverlayId]);
+
+  const handleStabilize = async () => {
+    const media = state.media.find(m => m.id === clip.mediaId);
+    if (!media) return;
+    setStabilizing(true);
+    dispatch({ type: 'toast/push', kind: 'info', message: 'Analyzing camera shake on GPU/CPU...' });
+
+    const video = document.createElement('video');
+    video.src = media.src;
+    video.muted = true;
+    video.preload = 'auto';
+
+    video.onloadedmetadata = async () => {
+      try {
+        const { analyzeStabilization, generateStabilizationKeyframes } = await import('../engine/stabilizer.js');
+        const stabData = await analyzeStabilization(video, {
+          startTime: clip.srcIn ?? 0,
+          endTime: clip.srcOut ?? video.duration ?? 10,
+          fps: 12
+        });
+
+        if (!stabData || !stabData.length) {
+          dispatch({ type: 'toast/push', kind: 'info', message: 'No camera shake detected.' });
+          return;
+        }
+
+        const { keyframes, zoom } = generateStabilizationKeyframes(stabData, clip);
+
+        // Update clip with auto zoom and stabilization keyframes
+        dispatch({
+          type: 'clip/updateTransform',
+          id: clip.id,
+          patch: {
+            scale: zoom,
+            keyframes: (clip.keyframes ?? []).concat(keyframes)
+          }
+        });
+
+        dispatch({ type: 'toast/push', kind: 'success', message: 'Stabilization complete! Auto-zoom applied.' });
+      } catch (err) {
+        console.error(err);
+        dispatch({ type: 'toast/push', kind: 'error', message: 'Stabilization failed: ' + err.message });
+      } finally {
+        video.remove();
+        setStabilizing(false);
+      }
+    };
+    video.onerror = () => {
+      dispatch({ type: 'toast/push', kind: 'error', message: 'Failed to load video source.' });
+      video.remove();
+      setStabilizing(false);
+    };
+  };
+
+  const handleTrackMotion = async () => {
+    if (!selectedOverlayId) {
+      dispatch({ type: 'toast/push', kind: 'error', message: 'Please select a target overlay to bind motion to.' });
+      return;
+    }
+    const media = state.media.find(m => m.id === clip.mediaId);
+    if (!media) return;
+    setTracking(true);
+    dispatch({ type: 'toast/push', kind: 'info', message: 'Tracking visual feature in background...' });
+
+    const video = document.createElement('video');
+    video.src = media.src;
+    video.muted = true;
+    video.preload = 'auto';
+
+    video.onloadedmetadata = async () => {
+      try {
+        const { trackFeature, convertTrackingToKeyframes } = await import('../engine/motionTracker.js');
+        const initialBox = { x: 0.45, y: 0.45, w: 0.1, h: 0.1 };
+        const trackData = await trackFeature(video, initialBox, {
+          startTime: clip.srcIn ?? 0,
+          endTime: clip.srcOut ?? video.duration ?? 10,
+          fps: 10
+        });
+
+        const targetOverlay = state.clips.find(c => c.id === selectedOverlayId);
+        if (!targetOverlay) {
+          dispatch({ type: 'toast/push', kind: 'error', message: 'Target overlay clip not found.' });
+          return;
+        }
+
+        const keyframes = convertTrackingToKeyframes(trackData, clip, targetOverlay);
+
+        dispatch({
+          type: 'clip/updateTransform',
+          id: targetOverlay.id,
+          patch: {
+            keyframes: (targetOverlay.keyframes ?? []).concat(keyframes)
+          }
+        });
+
+        dispatch({ type: 'toast/push', kind: 'success', message: `Motion tracked successfully! Keyframes applied to "${targetOverlay.kind}".` });
+      } catch (err) {
+        console.error(err);
+        dispatch({ type: 'toast/push', kind: 'error', message: 'Tracking failed: ' + err.message });
+      } finally {
+        video.remove();
+        setTracking(false);
+      }
+    };
+    video.onerror = () => {
+      dispatch({ type: 'toast/push', kind: 'error', message: 'Failed to load video source.' });
+      video.remove();
+      setTracking(false);
+    };
+  };
+
   return (
     <div className="cc-section" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-      <h4 style={{ margin: '0 0 8px', fontSize: '12px', color: '#fff', textTransform: 'uppercase' }}>Greenscreen / Chroma Key</h4>
-      
-      <label className="cc-field cc-field--row">
-        <input
-          type="checkbox"
-          checked={f.chromaKey?.enabled ?? false}
-          onChange={(e) => updChroma({ enabled: e.target.checked })}
-        />
-        <span style={{ color: '#d4d4d8' }}>Enable chroma key</span>
-      </label>
+      <div style={{ borderBottom: '1px solid #27272a', paddingBottom: '14px' }}>
+        <h4 style={{ margin: '0 0 8px', fontSize: '12px', color: '#fff', textTransform: 'uppercase' }}>Greenscreen / Chroma Key</h4>
+        
+        <label className="cc-field cc-field--row">
+          <input
+            type="checkbox"
+            checked={f.chromaKey?.enabled ?? false}
+            onChange={(e) => updChroma({ enabled: e.target.checked })}
+          />
+          <span style={{ color: '#d4d4d8' }}>Enable chroma key</span>
+        </label>
 
-      {f.chromaKey?.enabled && (
+        {f.chromaKey?.enabled && (
+          <>
+            <label className="cc-field cc-field--row" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '8px' }}>
+              <span style={{ fontSize: '11px', color: '#a1a1aa' }}>Key Color</span>
+              <input
+                type="color"
+                value={f.chromaKey?.color ?? '#00ff00'}
+                onChange={(e) => updChroma({ color: e.target.value })}
+              />
+            </label>
+            <Slider label="Color Tolerance" min={0.05} max={0.9} step={0.01} value={f.chromaKey?.tolerance ?? 0.35} onChange={(v) => updChroma({ tolerance: v })} />
+            <Slider label="Edge Softness"  min={0} max={0.5} step={0.01} value={f.chromaKey?.softness ?? 0.1} onChange={(v) => updChroma({ softness: v })} />
+          </>
+        )}
+      </div>
+
+      {clip.kind === 'video' && (
         <>
-          <label className="cc-field cc-field--row" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontSize: '11px', color: '#a1a1aa' }}>Key Color</span>
-            <input
-              type="color"
-              value={f.chromaKey?.color ?? '#00ff00'}
-              onChange={(e) => updChroma({ color: e.target.value })}
-            />
-          </label>
-          <Slider label="Color Tolerance" min={0.05} max={0.9} step={0.01} value={f.chromaKey?.tolerance ?? 0.35} onChange={(v) => updChroma({ tolerance: v })} />
-          <Slider label="Edge Softness"  min={0} max={0.5} step={0.01} value={f.chromaKey?.softness ?? 0.1} onChange={(v) => updChroma({ softness: v })} />
+          <div style={{ borderBottom: '1px solid #27272a', paddingBottom: '14px' }}>
+            <h4 style={{ margin: '0 0 8px', fontSize: '12px', color: '#fff', textTransform: 'uppercase' }}>AI Video Stabilizer</h4>
+            <p style={{ fontSize: '11px', color: '#a1a1aa', margin: '0 0 10px' }}>Smooths shaky camera movements and applies auto-zoom to prevent cropped borders.</p>
+            <button 
+              className="cc-btn cc-btn--ghost cc-btn--sm" 
+              onClick={handleStabilize} 
+              disabled={stabilizing}
+              style={{ width: '100%' }}
+            >
+              {stabilizing ? 'Stabilizing...' : '🎬 Stabilize Video'}
+            </button>
+          </div>
+
+          <div>
+            <h4 style={{ margin: '0 0 8px', fontSize: '12px', color: '#fff', textTransform: 'uppercase' }}>AI Motion Tracker</h4>
+            <p style={{ fontSize: '11px', color: '#a1a1aa', margin: '0 0 10px' }}>Tracks a visual feature in the video and binds its path coordinates to an overlay clip (like titles/stickers).</p>
+            
+            <label className="cc-field" style={{ marginBottom: '10px' }}>
+              <span className="cc-field__label">Target Overlay Clip</span>
+              <select 
+                value={selectedOverlayId} 
+                onChange={(e) => setSelectedOverlayId(e.target.value)}
+                style={{ background: '#1c1c21', color: '#fff', width: '100%', border: '1px solid #3f3f46', borderRadius: '4px', padding: '4px' }}
+                disabled={tracking}
+              >
+                <option value="">Select target overlay...</option>
+                {overlayClips.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.kind.toUpperCase()} : {c.title?.text ? `"${c.title.text.slice(0, 15)}..."` : c.id}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <button 
+              className="cc-btn cc-btn--primary cc-btn--sm" 
+              onClick={handleTrackMotion} 
+              disabled={tracking || !selectedOverlayId}
+              style={{ width: '100%' }}
+            >
+              {tracking ? 'Tracking...' : '🎯 Track & Bind Motion'}
+            </button>
+          </div>
         </>
       )}
     </div>

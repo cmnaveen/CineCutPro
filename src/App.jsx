@@ -19,6 +19,7 @@ import { WelcomeModal } from './components/WelcomeModal.jsx';
 import { ProjectSettings } from './components/ProjectSettings.jsx';
 import { ColorGrading } from './components/ColorGrading.jsx';
 import { AudioMixer } from './components/AudioMixer.jsx';
+import { MulticamViewer } from './components/MulticamViewer.jsx';
 import { useKeyboard } from './hooks/useKeyboard.js';
 import './styles/app.css';
 import './styles/header.css';
@@ -33,6 +34,7 @@ import './styles/pro.css';
 import './styles/left-panel.css';
 import './styles/color-grading.css';
 import './styles/audio-mixer.css';
+import './styles/multicam-viewer.css';
 
 export default function App() {
   useKeyboard();
@@ -135,6 +137,7 @@ export default function App() {
       <ExportDialog />
       <WelcomeModal />
       <ProjectSettings />
+      <MulticamViewer />
       <ContextMenu />
       <Toasts />
 

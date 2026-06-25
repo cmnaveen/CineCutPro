@@ -15,6 +15,7 @@ import { drawTitle, drawSubtitle } from './titleCompositor.js';
 import { runTransition } from './transitions.js';
 import { applyChromaKey } from './chromaKey.js';
 import { applyEffectsStack } from './effectsRegistry.js';
+import { webglRenderer } from './webglRenderer.js';
 
 const PROGRAM_W = 1920;
 const PROGRAM_H = 1080;
@@ -173,6 +174,46 @@ class MediaRenderer {
     ].join(' ');
   }
 
+  _getWebGLParams(clip) {
+    const params = {
+      exposure: 0,
+      brightness: 1,
+      contrast: 1,
+      saturation: 1,
+      vignette: clip.filters?.vignette ?? 0,
+      temperature: 0,
+      tint: 0,
+      lift: { r: 0, g: 0, b: 0 },
+      gamma: { r: 1, g: 1, b: 1 },
+      gain: { r: 1, g: 1, b: 1 },
+      chromaKey: clip.filters?.chromaKey ?? {}
+    };
+
+    const exposureEffect = clip.effects?.find(e => e.id === 'exposure' && e.enabled !== false);
+    if (exposureEffect) params.exposure = exposureEffect.params?.exposure ?? 0;
+
+    const tempEffect = clip.effects?.find(e => e.id === 'temperature' && e.enabled !== false);
+    if (tempEffect) {
+      params.temperature = (tempEffect.params?.temperature ?? 0) / 100;
+      params.tint = (tempEffect.params?.tint ?? 0) / 100;
+    }
+
+    const vibranceEffect = clip.effects?.find(e => e.id === 'vibrance' && e.enabled !== false);
+    if (vibranceEffect) {
+      params.saturation = 1 + (vibranceEffect.params?.vibrance ?? 0) / 100;
+    }
+
+    const balanceEffect = clip.effects?.find(e => e.id === 'colorBalance' && e.enabled !== false);
+    if (balanceEffect) {
+      const r = (balanceEffect.params?.redShift ?? 0) / 100;
+      const g = (balanceEffect.params?.greenShift ?? 0) / 100;
+      const b = (balanceEffect.params?.blueShift ?? 0) / 100;
+      params.lift = { r: r * 0.2, g: g * 0.2, b: b * 0.2 };
+    }
+
+    return params;
+  }
+
   /** Interpolate a keyframed channel at clip-local time `localT`, honoring per-keyframe easing. */
   _keyframeValue(clip, channel, defaultValue, localT) {
     const kfs = (clip.keyframes ?? []).filter((k) => k.channel === channel);
@@ -323,7 +364,25 @@ class MediaRenderer {
           let dh = h;
           if (srcAR > targetAR) dh = w / srcAR;
           else dw = h * srcAR;
-          scratch.ctx.drawImage(el, cx, cy, cw, ch, (w - dw) / 2, (h - dh) / 2, dw, dh);
+
+          const webglParams = this._getWebGLParams(clip);
+          let finalSource = el;
+          let cropCanvas = null;
+          if (crop.left > 0 || crop.right > 0 || crop.top > 0 || crop.bottom > 0) {
+            cropCanvas = document.createElement('canvas');
+            cropCanvas.width = cw;
+            cropCanvas.height = ch;
+            const cctx = cropCanvas.getContext('2d');
+            cctx.drawImage(el, cx, cy, cw, ch, 0, 0, cw, ch);
+            finalSource = cropCanvas;
+          }
+
+          try {
+            const processedCanvas = webglRenderer.process(finalSource, dw, dh, webglParams);
+            scratch.ctx.drawImage(processedCanvas, (w - dw) / 2, (h - dh) / 2);
+          } catch (e) {
+            scratch.ctx.drawImage(el, cx, cy, cw, ch, (w - dw) / 2, (h - dh) / 2, dw, dh);
+          }
         }
       } else if (media && media.kind === 'video') {
         const el = this.mediaElements.get(media.id);
@@ -340,13 +399,26 @@ class MediaRenderer {
           let dh = h;
           if (srcAR > targetAR) dh = w / srcAR;
           else dw = h * srcAR;
-          
-          const ck = clip.filters?.chromaKey;
-          if (ck?.enabled) {
+
+          const webglParams = this._getWebGLParams(clip);
+          let finalSource = el;
+          let cropCanvas = null;
+          if (crop.left > 0 || crop.right > 0 || crop.top > 0 || crop.bottom > 0) {
+            cropCanvas = document.createElement('canvas');
+            cropCanvas.width = cw;
+            cropCanvas.height = ch;
+            const cctx = cropCanvas.getContext('2d');
+            cctx.drawImage(el, cx, cy, cw, ch, 0, 0, cw, ch);
+            finalSource = cropCanvas;
+          }
+
+          try {
+            const processedCanvas = webglRenderer.process(finalSource, dw, dh, webglParams);
+            scratch.ctx.drawImage(processedCanvas, (w - dw) / 2, (h - dh) / 2);
+          } catch (e) {
             scratch.ctx.drawImage(el, cx, cy, cw, ch, (w - dw) / 2, (h - dh) / 2, dw, dh);
-            applyChromaKey(scratch.ctx, w, h, ck);
-          } else {
-            scratch.ctx.drawImage(el, cx, cy, cw, ch, (w - dw) / 2, (h - dh) / 2, dw, dh);
+            const ck = clip.filters?.chromaKey;
+            if (ck?.enabled) applyChromaKey(scratch.ctx, w, h, ck);
           }
         } else {
           scratch.ctx.fillStyle = '#1a2434';
@@ -356,18 +428,27 @@ class MediaRenderer {
 
       const vig = clip.filters?.vignette ?? 0;
       if (vig > 0.001) {
-        scratch.ctx.filter = 'none';
-        const g = scratch.ctx.createRadialGradient(w / 2, h / 2, w * 0.25, w / 2, h / 2, w * 0.62);
-        g.addColorStop(0, 'rgba(0,0,0,0)');
-        g.addColorStop(1, `rgba(0,0,0,${vig})`);
-        scratch.ctx.fillStyle = g;
-        scratch.ctx.fillRect(0, 0, w, h);
+        const webglParams = this._getWebGLParams(clip);
+        if (!webglRenderer.initialized) {
+          scratch.ctx.filter = 'none';
+          const g = scratch.ctx.createRadialGradient(w / 2, h / 2, w * 0.25, w / 2, h / 2, w * 0.62);
+          g.addColorStop(0, 'rgba(0,0,0,0)');
+          g.addColorStop(1, `rgba(0,0,0,${vig})`);
+          scratch.ctx.fillStyle = g;
+          scratch.ctx.fillRect(0, 0, w, h);
+        }
       }
       scratch.ctx.restore();
 
-      // Apply the composable effects stack!
-      if (clip.effects?.length) {
-        applyEffectsStack(scratch.ctx, w, h, clip.effects, localT);
+      // Apply the composable effects stack (filtering out GPU-handled ones)
+      const cpuEffects = (clip.effects ?? []).filter(e => 
+        e.id !== 'exposure' && 
+        e.id !== 'temperature' && 
+        e.id !== 'vibrance' && 
+        e.id !== 'colorBalance'
+      );
+      if (cpuEffects.length) {
+        applyEffectsStack(scratch.ctx, w, h, cpuEffects, localT);
       }
 
       // Draw scratch onto target track context with transformation

@@ -30,6 +30,60 @@ export function ContextMenu() {
   const close = () => dispatch({ type: 'ui/closeContextMenu' });
   const run = (fn) => () => { fn(); close(); };
 
+  const handleDetectScenes = async (targetClip) => {
+    const media = state.media.find((m) => m.id === targetClip.mediaId);
+    if (!media) {
+      dispatch({ type: 'toast/push', kind: 'error', message: 'Media source not found for clip' });
+      return;
+    }
+    const video = document.createElement('video');
+    video.src = media.src;
+    video.muted = true;
+    video.preload = 'auto';
+
+    video.onloadedmetadata = async () => {
+      try {
+        dispatch({ type: 'toast/push', kind: 'info', message: 'Analyzing scenes in background...' });
+        const { detectScenes } = await import('../engine/sceneDetector.js');
+        const cuts = await detectScenes(video, {
+          startTime: targetClip.srcIn ?? 0,
+          endTime: targetClip.srcOut ?? video.duration ?? 60,
+          sensitivity: 0.5
+        });
+
+        if (!cuts || !cuts.length) {
+          dispatch({ type: 'toast/push', kind: 'info', message: 'No scene cuts detected.' });
+          return;
+        }
+
+        const speed = targetClip.speed ?? 1;
+        const timelineCutTimes = cuts.map(c => targetClip.start + (c.time - targetClip.srcIn) / speed);
+
+        dispatch({
+          type: 'clip/multiBlade',
+          clipId: targetClip.id,
+          times: timelineCutTimes
+        });
+
+        dispatch({
+          type: 'toast/push',
+          kind: 'success',
+          message: `Scene detection complete! Split clip into ${cuts.length + 1} parts.`
+        });
+      } catch (err) {
+        console.error(err);
+        dispatch({ type: 'toast/push', kind: 'error', message: 'Scene detection failed: ' + err.message });
+      } finally {
+        video.remove();
+      }
+    };
+
+    video.onerror = () => {
+      dispatch({ type: 'toast/push', kind: 'error', message: 'Failed to load video source.' });
+      video.remove();
+    };
+  };
+
   // Clamp to viewport
   const vw = window.innerWidth;
   const vh = window.innerHeight;
@@ -44,6 +98,11 @@ export function ContextMenu() {
       <button onClick={run(() => dispatch({ type: 'clip/blade', t: state.playhead, ids: [clip.id] }))}>
         <Icon.Blade size={13} /> Blade at playhead <kbd>B</kbd>
       </button>
+      {clip.kind === 'video' && (
+        <button onClick={run(() => handleDetectScenes(clip))}>
+          🎬 Split at Scene Changes
+        </button>
+      )}
       <button onClick={run(() => dispatch({ type: 'clip/duplicate', ids: [clip.id] }))}>
         <Icon.Plus size={13} /> Duplicate <kbd>⌘D</kbd>
       </button>
