@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
 import { initialState, FPS } from './initialState.js';
 import { reducer as baseReducer, HISTORY_ACTIONS } from './editorReducer.js';
-import { emptyHistory, pushHistory, undo as undoFn, redo as redoFn, undoLabel, redoLabel } from './history.js';
+import { createHistoryController } from './historyController.js';
 import { readAutosave, writeAutosave } from '../engine/projectIO.js';
 import { getMedia } from '../engine/mediaStore.js';
 import { migrate, needsMigration } from '../engine/migrator.js';
@@ -30,7 +30,9 @@ export function EditorProvider({ children }) {
     }
     return init;
   });
-  const historyRef = useRef(emptyHistory());
+  // Undo/redo backend (snapshot or patch) — selected once at mount via flag.
+  const historyRef = useRef(null);
+  if (historyRef.current === null) historyRef.current = createHistoryController();
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -39,24 +41,22 @@ export function EditorProvider({ children }) {
       // Reducer is pure: a dry-run lets us skip history when the action no-ops.
       const next = baseReducer(stateRef.current, action);
       if (next !== stateRef.current) {
-        historyRef.current = pushHistory(historyRef.current, stateRef.current, action.type);
+        historyRef.current.record(stateRef.current, next, action.type);
       }
     }
     baseDispatch(action);
   }, []);
 
   const undo = useCallback(() => {
-    const { history, state: next } = undoFn(historyRef.current, stateRef.current);
+    const next = historyRef.current.undo(stateRef.current);
     if (next !== stateRef.current) {
-      historyRef.current = history;
       baseDispatch({ type: '__replace__', state: next });
     }
   }, []);
 
   const redo = useCallback(() => {
-    const { history, state: next } = redoFn(historyRef.current, stateRef.current);
+    const next = historyRef.current.redo(stateRef.current);
     if (next !== stateRef.current) {
-      historyRef.current = history;
       baseDispatch({ type: '__replace__', state: next });
     }
   }, []);
@@ -106,9 +106,9 @@ export function EditorProvider({ children }) {
       selectedClips,
       duration,
       fps: FPS,
-      historyDepth: historyRef.current.past.length,
-      undoLabel: undoLabel(historyRef.current),
-      redoLabel: redoLabel(historyRef.current)
+      historyDepth: historyRef.current.depth(),
+      undoLabel: historyRef.current.undoLabel(),
+      redoLabel: historyRef.current.redoLabel()
     }),
     // historyDepth is intentionally not tracked precisely: it is informational.
     // eslint-disable-next-line react-hooks/exhaustive-deps
