@@ -100,6 +100,30 @@ describe('clips', () => {
   });
 });
 
+describe('magnetic timeline', () => {
+  it('clip/delete in magnetic mode repacks the track without crashing', () => {
+    const tid = videoTrack(initialState);
+    const clips = [
+      { id: 'a', trackId: tid, start: 0, end: 2 },
+      { id: 'b', trackId: tid, start: 5, end: 8 }, // gap before it
+      { id: 'c', trackId: tid, start: 10, end: 12 } // another gap before it
+    ];
+    const s0 = {
+      ...initialState,
+      ui: { ...initialState.ui, timelineMode: 'magnetic' },
+      clips,
+      selectedClipIds: []
+    };
+    // Before the const→let fix this threw "Assignment to constant variable".
+    const s1 = reducer(s0, { type: 'clip/delete', ids: ['b'] });
+    const byId = Object.fromEntries(s1.clips.map((c) => [c.id, c]));
+    expect(byId.b).toBeUndefined();
+    expect(byId.a).toMatchObject({ start: 0, end: 2 });
+    expect(byId.c).toMatchObject({ start: 2, end: 4 }); // packed gapless after a
+    expect(s1.selectedClipIds).toEqual([]);
+  });
+});
+
 describe('transitions', () => {
   it('apply sets kind + duration; clear removes', () => {
     let s = withClip(0);

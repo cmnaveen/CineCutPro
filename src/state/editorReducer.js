@@ -394,7 +394,8 @@ export function reducer(state, action) {
     case 'clip/delete': {
       const ids = action.ids?.length ? action.ids : state.selectedClipIds;
       if (!ids.length) return state;
-      const remaining = state.clips.filter((c) => !ids.includes(c.id));
+      // `let`: the magnetic branch below repacks `remaining` track-by-track.
+      let remaining = state.clips.filter((c) => !ids.includes(c.id));
       if (state.ui.timelineMode === 'magnetic') {
         const removed = state.clips.filter((c) => ids.includes(c.id));
         const trackIds = new Set(removed.map((c) => c.trackId));
