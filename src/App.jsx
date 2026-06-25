@@ -8,6 +8,7 @@ import { Inspector } from './components/Inspector.jsx';
 import { Timeline } from './components/Timeline.jsx';
 import { TrimEditor } from './components/TrimEditor.jsx';
 import { AnalyzerSlideout } from './components/AnalyzerSlideout.jsx';
+import { TimelineMarkers } from './components/TimelineMarkers.jsx';
 import { ExportDialog } from './components/ExportDialog.jsx';
 import { ShortcutsModal } from './components/ShortcutsModal.jsx';
 import { TransitionsRail } from './components/TransitionsRail.jsx';
@@ -16,6 +17,8 @@ import { StatusBar } from './components/StatusBar.jsx';
 import { ContextMenu } from './components/ContextMenu.jsx';
 import { WelcomeModal } from './components/WelcomeModal.jsx';
 import { ProjectSettings } from './components/ProjectSettings.jsx';
+import { ColorGrading } from './components/ColorGrading.jsx';
+import { AudioMixer } from './components/AudioMixer.jsx';
 import { useKeyboard } from './hooks/useKeyboard.js';
 import './styles/app.css';
 import './styles/header.css';
@@ -28,6 +31,8 @@ import './styles/premium.css';
 import './styles/animations.css';
 import './styles/pro.css';
 import './styles/left-panel.css';
+import './styles/color-grading.css';
+import './styles/audio-mixer.css';
 
 export default function App() {
   useKeyboard();
@@ -110,7 +115,9 @@ export default function App() {
     <div className="cc-app">
       <Header />
       <main className="cc-workspace">
-        <LeftControlPanel />
+        {(state.ui.panelLayout ?? 'default') === 'default' && <LeftControlPanel />}
+        {state.ui.panelLayout === 'color' && <ColorGrading />}
+        {state.ui.panelLayout === 'audio' && <AudioMixer />}
         <section className={`cc-monitors ${single ? 'cc-monitors--single' : ''}`}>
           {!single && <SourceMonitor />}
           <ProgramMonitor />
@@ -122,6 +129,7 @@ export default function App() {
 
       <TransitionsRail />
       <AnalyzerSlideout />
+      <TimelineMarkers />
       <TrimEditor />
       <ShortcutsModal />
       <ExportDialog />

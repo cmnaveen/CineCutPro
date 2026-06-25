@@ -42,6 +42,22 @@ const tryPlaceClip = (clips, target) => {
   return candidate;
 };
 
+const packTrackMagnetic = (clips, trackId) => {
+  const trackClips = clips
+    .filter((c) => c.trackId === trackId)
+    .sort((a, b) => a.start - b.start);
+  if (!trackClips.length) return clips;
+  const otherClips = clips.filter((c) => c.trackId !== trackId);
+  const adjusted = [];
+  let cursor = 0;
+  for (const c of trackClips) {
+    const dur = c.end - c.start;
+    adjusted.push({ ...c, start: cursor, end: cursor + dur });
+    cursor += dur;
+  }
+  return otherClips.concat(adjusted);
+};
+
 // ---------- Default clip shape ----------
 const defaultTransform = () => ({
   x: 0,
@@ -186,10 +202,17 @@ export function reducer(state, action) {
         duration: dur,
         srcIn
       });
-      const placed = action.ripple
-        ? candidate
-        : tryPlaceClip(state.clips.filter((c) => c.trackId === track.id), candidate);
-      return { ...state, clips: state.clips.concat([placed]), selectedClipIds: [placed.id] };
+      let nextClips;
+      if (state.ui.timelineMode === 'magnetic') {
+        nextClips = packTrackMagnetic(state.clips.concat([candidate]), track.id);
+      } else {
+        const placed = action.ripple
+          ? candidate
+          : tryPlaceClip(state.clips.filter((c) => c.trackId === track.id), candidate);
+        nextClips = state.clips.concat([placed]);
+      }
+      const added = nextClips.find(c => c.mediaId === media.id && c.trackId === track.id && Math.abs(c.srcIn - srcIn) < 0.001) ?? candidate;
+      return { ...state, clips: nextClips, selectedClipIds: [added.id] };
     }
 
     case 'clip/insertTitle': {
@@ -212,8 +235,15 @@ export function reducer(state, action) {
           color: '#ffffff'
         }
       });
-      const placed = tryPlaceClip(state.clips.filter((c) => c.trackId === track.id), candidate);
-      return { ...state, clips: state.clips.concat([placed]), selectedClipIds: [placed.id] };
+      let nextClips;
+      if (state.ui.timelineMode === 'magnetic') {
+        nextClips = packTrackMagnetic(state.clips.concat([candidate]), track.id);
+      } else {
+        const placed = tryPlaceClip(state.clips.filter((c) => c.trackId === track.id), candidate);
+        nextClips = state.clips.concat([placed]);
+      }
+      const added = nextClips.find(c => c.kind === 'title' && c.trackId === track.id && Math.abs(c.start - start) < 0.5) ?? candidate;
+      return { ...state, clips: nextClips, selectedClipIds: [added.id] };
     }
 
     case 'clip/move': {
@@ -221,13 +251,23 @@ export function reducer(state, action) {
       if (!target) return state;
       const newStart = Math.max(0, snapValue(action.start, state.snap, state.pixelsPerSecond));
       const moved = { ...target, start: newStart, end: newStart + (target.end - target.start), trackId: action.trackId ?? target.trackId };
-      const peers = state.clips.filter((c) => c.id !== target.id && c.trackId === moved.trackId);
-      if (peers.some((p) => overlaps(p, moved))) {
-        // Refuse to overlap: snap to nearest valid position
-        const placed = tryPlaceClip(peers, moved);
-        return { ...state, clips: state.clips.map((c) => (c.id === target.id ? placed : c)) };
+      const sourceTrackId = target.trackId;
+      const destTrackId = moved.trackId;
+      let nextClips = state.clips.map((c) => (c.id === target.id ? moved : c));
+
+      if (state.ui.timelineMode === 'magnetic') {
+        nextClips = packTrackMagnetic(nextClips, sourceTrackId);
+        if (destTrackId !== sourceTrackId) {
+          nextClips = packTrackMagnetic(nextClips, destTrackId);
+        }
+      } else {
+        const peers = state.clips.filter((c) => c.id !== target.id && c.trackId === moved.trackId);
+        if (peers.some((p) => overlaps(p, moved))) {
+          const placed = tryPlaceClip(peers, moved);
+          return { ...state, clips: state.clips.map((c) => (c.id === target.id ? placed : c)) };
+        }
       }
-      return { ...state, clips: state.clips.map((c) => (c.id === target.id ? moved : c)) };
+      return { ...state, clips: nextClips };
     }
     case 'clip/moveSelection': {
       // Move every selected clip so the dragged anchor lands at `action.start`,
@@ -266,9 +306,14 @@ export function reducer(state, action) {
         next.end = proposed;
         next.srcOut = target.srcIn + (next.end - next.start);
       }
-      const peers = state.clips.filter((c) => c.id !== target.id && c.trackId === target.trackId);
-      if (peers.some((p) => overlaps(p, next))) return state;
-      return { ...state, clips: state.clips.map((c) => (c.id === target.id ? next : c)) };
+      let nextClips = state.clips.map((c) => (c.id === target.id ? next : c));
+      if (state.ui.timelineMode === 'magnetic') {
+        nextClips = packTrackMagnetic(nextClips, target.trackId);
+      } else {
+        const peers = state.clips.filter((c) => c.id !== target.id && c.trackId === target.trackId);
+        if (peers.some((p) => overlaps(p, next))) return state;
+      }
+      return { ...state, clips: nextClips };
     }
 
     case 'clip/blade': {
@@ -301,6 +346,14 @@ export function reducer(state, action) {
       const ids = action.ids?.length ? action.ids : state.selectedClipIds;
       if (!ids.length) return state;
       const remaining = state.clips.filter((c) => !ids.includes(c.id));
+      if (state.ui.timelineMode === 'magnetic') {
+        const removed = state.clips.filter((c) => ids.includes(c.id));
+        const trackIds = new Set(removed.map((c) => c.trackId));
+        for (const tid of trackIds) {
+          remaining = packTrackMagnetic(remaining, tid);
+        }
+        return { ...state, clips: remaining, selectedClipIds: [] };
+      }
       if (!action.ripple) {
         return { ...state, clips: remaining, selectedClipIds: [] };
       }
@@ -501,8 +554,15 @@ export function reducer(state, action) {
     /* ===== UI flags ===== */
     case 'ui/toggle':
       return { ...state, ui: { ...state.ui, [action.key]: !state.ui[action.key] } };
-    case 'ui/set':
-      return { ...state, ui: { ...state.ui, [action.key]: action.value } };
+    case 'ui/set': {
+      let nextClips = state.clips;
+      if (action.key === 'timelineMode' && action.value === 'magnetic') {
+        for (const track of state.tracks) {
+          nextClips = packTrackMagnetic(nextClips, track.id);
+        }
+      }
+      return { ...state, ui: { ...state.ui, [action.key]: action.value }, clips: nextClips };
+    }
     case 'ui/openTrimEditor':
       return { ...state, ui: { ...state.ui, trimEditorOpen: true, trimClipId: action.id } };
 
@@ -553,6 +613,397 @@ export function reducer(state, action) {
         )
       };
 
+    /* ===== Timeline Markers ===== */
+    case 'marker/add': {
+      const m = {
+        id: uid('mkr'),
+        time: action.time ?? state.playhead,
+        label: action.label ?? '',
+        color: action.color ?? '#fbbf24',
+        chapter: action.chapter ?? false
+      };
+      return { ...state, markers: state.markers.concat([m]) };
+    }
+    case 'marker/remove':
+      return { ...state, markers: state.markers.filter((m) => m.id !== action.id) };
+    case 'marker/update':
+      return {
+        ...state,
+        markers: state.markers.map((m) => (m.id === action.id ? { ...m, ...action.patch } : m))
+      };
+
+    /* ===== Clipboard ===== */
+    case 'clipboard/copy': {
+      const ids = action.ids?.length ? action.ids : state.selectedClipIds;
+      const copied = state.clips.filter((c) => ids.includes(c.id)).map((c) => ({ ...c }));
+      return { ...state, clipboard: copied };
+    }
+    case 'clipboard/cut': {
+      const ids = action.ids?.length ? action.ids : state.selectedClipIds;
+      const cut = state.clips.filter((c) => ids.includes(c.id)).map((c) => ({ ...c }));
+      return {
+        ...state,
+        clipboard: cut,
+        clips: state.clips.filter((c) => !ids.includes(c.id)),
+        selectedClipIds: []
+      };
+    }
+    case 'clipboard/paste': {
+      if (!state.clipboard.length) return state;
+      const offset = action.time ?? state.playhead;
+      const earliest = Math.min(...state.clipboard.map((c) => c.start));
+      const delta = offset - earliest;
+      const newClips = state.clipboard.map((c) => ({
+        ...c,
+        id: uid('clip'),
+        start: c.start + delta,
+        end: c.end + delta
+      }));
+      const newIds = newClips.map((c) => c.id);
+      return { ...state, clips: state.clips.concat(newClips), selectedClipIds: newIds };
+    }
+
+    /* ===== Clip Groups ===== */
+    case 'clip/group': {
+      const ids = action.ids?.length ? action.ids : state.selectedClipIds;
+      if (ids.length < 2) return state;
+      const groupId = uid('grp');
+      const group = { id: groupId, clipIds: ids.slice() };
+      return {
+        ...state,
+        groups: state.groups.concat([group]),
+        clips: state.clips.map((c) => (ids.includes(c.id) ? { ...c, groupId } : c))
+      };
+    }
+    case 'clip/ungroup': {
+      const gid = action.groupId;
+      if (!gid) return state;
+      return {
+        ...state,
+        groups: state.groups.filter((g) => g.id !== gid),
+        clips: state.clips.map((c) => (c.groupId === gid ? { ...c, groupId: null } : c))
+      };
+    }
+
+    /* ===== Advanced Edits ===== */
+    case 'clip/rippleDelete': {
+      const ids = action.ids?.length ? action.ids : state.selectedClipIds;
+      if (!ids.length) return state;
+      const removed = state.clips.filter((c) => ids.includes(c.id));
+      const remaining = state.clips.filter((c) => !ids.includes(c.id));
+      // Build shift map per track
+      const shifts = new Map(); // trackId -> [{after, by}]
+      for (const r of removed) {
+        const list = shifts.get(r.trackId) ?? [];
+        list.push({ after: r.start, by: r.end - r.start });
+        shifts.set(r.trackId, list);
+      }
+      // Sort shift entries by 'after' descending so we apply from right to left
+      for (const list of shifts.values()) list.sort((a, b) => b.after - a.after);
+      const out = remaining.map((c) => {
+        const list = shifts.get(c.trackId);
+        if (!list) return c;
+        let shift = 0;
+        for (const s of list) if (c.start >= s.after) shift += s.by;
+        return shift ? { ...c, start: Math.max(0, c.start - shift), end: Math.max(0.1, c.end - shift) } : c;
+      });
+      return { ...state, clips: out, selectedClipIds: [] };
+    }
+
+    case 'clip/rollEdit': {
+      // Adjust boundary between two adjacent clips
+      const { leftId, rightId, delta } = action;
+      const left = state.clips.find((c) => c.id === leftId);
+      const right = state.clips.find((c) => c.id === rightId);
+      if (!left || !right) return state;
+      const newLeftEnd = left.end + delta;
+      const newRightStart = right.start + delta;
+      if (newLeftEnd <= left.start + 0.1 || newRightStart >= right.end - 0.1) return state;
+      return {
+        ...state,
+        clips: state.clips.map((c) => {
+          if (c.id === leftId) return { ...c, end: newLeftEnd, srcOut: c.srcIn + (newLeftEnd - c.start) };
+          if (c.id === rightId) return { ...c, start: newRightStart, srcIn: c.srcIn + delta };
+          return c;
+        })
+      };
+    }
+
+    case 'clip/slipEdit': {
+      // Shift source window without changing timeline position
+      const { id, delta } = action;
+      const target = state.clips.find((c) => c.id === id);
+      if (!target) return state;
+      const newSrcIn = Math.max(0, target.srcIn + delta);
+      const newSrcOut = newSrcIn + (target.end - target.start);
+      return {
+        ...state,
+        clips: state.clips.map((c) =>
+          c.id === id ? { ...c, srcIn: newSrcIn, srcOut: newSrcOut } : c
+        )
+      };
+    }
+
+    case 'clip/slideEdit': {
+      // Move clip on timeline, trimming adjacent clips to accommodate
+      const { id, delta } = action;
+      const target = state.clips.find((c) => c.id === id);
+      if (!target) return state;
+      const peers = state.clips.filter((c) => c.id !== id && c.trackId === target.trackId);
+      peers.sort((a, b) => a.start - b.start);
+      const prevClip = peers.filter((c) => c.end <= target.start + 0.001).pop();
+      const nextClip = peers.find((c) => c.start >= target.end - 0.001);
+      if (delta < 0 && prevClip) {
+        const newPrevEnd = prevClip.end + delta;
+        if (newPrevEnd <= prevClip.start + 0.1) return state;
+      }
+      if (delta > 0 && nextClip) {
+        const newNextStart = nextClip.start + delta;
+        if (newNextStart >= nextClip.end - 0.1) return state;
+      }
+      return {
+        ...state,
+        clips: state.clips.map((c) => {
+          if (c.id === id) return { ...c, start: c.start + delta, end: c.end + delta };
+          if (prevClip && c.id === prevClip.id) return { ...c, end: c.end + delta, srcOut: c.srcIn + (c.end + delta - c.start) };
+          if (nextClip && c.id === nextClip.id) return { ...c, start: c.start + delta, srcIn: c.srcIn + delta };
+          return c;
+        })
+      };
+    }
+
+    case 'clip/freeze': {
+      // Create a freeze frame at the current playhead position
+      const target = state.clips.find((c) => c.id === action.id);
+      if (!target) return state;
+      const freezeStart = action.time ?? state.playhead;
+      const freezeDur = action.duration ?? 2;
+      const freezeClip = {
+        id: uid('clip'),
+        trackId: target.trackId,
+        mediaId: target.mediaId,
+        kind: target.kind,
+        start: freezeStart,
+        end: freezeStart + freezeDur,
+        srcIn: (freezeStart - target.start) * (target.speed ?? 1) + target.srcIn,
+        srcOut: (freezeStart - target.start) * (target.speed ?? 1) + target.srcIn + 0.001,
+        speed: 0, // speed 0 = freeze frame
+        transform: { ...target.transform },
+        filters: { ...target.filters },
+        effects: [...(target.effects ?? [])],
+        audio: { volume: 0, pan: 0, muted: true, solo: false },
+        keyframes: [],
+        transitions: { in: null, out: null },
+        title: null,
+        reversed: false,
+        groupId: null,
+        linkedClipId: null,
+        adjustmentLayer: false
+      };
+      const placed = tryPlaceClip(state.clips.filter((c) => c.trackId === target.trackId), freezeClip);
+      return { ...state, clips: state.clips.concat([placed]), selectedClipIds: [placed.id] };
+    }
+
+    case 'clip/toggleReverse': {
+      const target = state.clips.find((c) => c.id === action.id);
+      if (!target) return state;
+      return {
+        ...state,
+        clips: state.clips.map((c) =>
+          c.id === action.id ? { ...c, reversed: !c.reversed } : c
+        )
+      };
+    }
+
+    case 'clip/linkAudio': {
+      // Link two clips (video + audio) so they move together
+      const { videoClipId, audioClipId } = action;
+      return {
+        ...state,
+        clips: state.clips.map((c) => {
+          if (c.id === videoClipId) return { ...c, linkedClipId: audioClipId };
+          if (c.id === audioClipId) return { ...c, linkedClipId: videoClipId };
+          return c;
+        })
+      };
+    }
+    case 'clip/unlinkAudio': {
+      const target = state.clips.find((c) => c.id === action.id);
+      if (!target || !target.linkedClipId) return state;
+      const linkedId = target.linkedClipId;
+      return {
+        ...state,
+        clips: state.clips.map((c) => {
+          if (c.id === action.id || c.id === linkedId) return { ...c, linkedClipId: null };
+          return c;
+        })
+      };
+    }
+
+    case 'clip/updateEffects':
+      return {
+        ...state,
+        clips: state.clips.map((c) =>
+          c.id === action.id ? { ...c, effects: action.effects } : c
+        )
+      };
+    case 'clip/addEffect': {
+      const target = state.clips.find((c) => c.id === action.id);
+      if (!target) return state;
+      const effect = { id: uid('fx'), ...action.effect };
+      return {
+        ...state,
+        clips: state.clips.map((c) =>
+          c.id === action.id
+            ? { ...c, effects: [...(c.effects ?? []), effect] }
+            : c
+        )
+      };
+    }
+    case 'clip/removeEffect':
+      return {
+        ...state,
+        clips: state.clips.map((c) =>
+          c.id === action.id
+            ? { ...c, effects: (c.effects ?? []).filter((e) => e.id !== action.effectId) }
+            : c
+        )
+      };
+    case 'clip/updateEffect':
+      return {
+        ...state,
+        clips: state.clips.map((c) =>
+          c.id === action.id
+            ? {
+                ...c,
+                effects: (c.effects ?? []).map((e) =>
+                  e.id === action.effectId ? { ...e, ...action.patch } : e
+                )
+              }
+            : c
+        )
+      };
+    case 'clip/reorderEffects': {
+      const target = state.clips.find((c) => c.id === action.id);
+      if (!target) return state;
+      const effects = [...(target.effects ?? [])];
+      const { fromIndex, toIndex } = action;
+      if (fromIndex < 0 || fromIndex >= effects.length || toIndex < 0 || toIndex >= effects.length) return state;
+      const [moved] = effects.splice(fromIndex, 1);
+      effects.splice(toIndex, 0, moved);
+      return {
+        ...state,
+        clips: state.clips.map((c) => (c.id === action.id ? { ...c, effects } : c))
+      };
+    }
+
+    /* ===== Sequences (Compound Clips / Nested Timelines) ===== */
+    case 'sequence/create': {
+      const seq = {
+        id: uid('seq'),
+        name: action.name ?? 'Sequence',
+        tracks: action.tracks ?? [],
+        clips: action.clips ?? [],
+        transitions: action.transitions ?? [],
+        parentId: action.parentId ?? null
+      };
+      return { ...state, sequences: state.sequences.concat([seq]) };
+    }
+    case 'sequence/open':
+      return { ...state, activeSequenceId: action.id };
+    case 'sequence/close':
+      return { ...state, activeSequenceId: null };
+    case 'sequence/delete':
+      return {
+        ...state,
+        sequences: state.sequences.filter((s) => s.id !== action.id),
+        activeSequenceId: state.activeSequenceId === action.id ? null : state.activeSequenceId
+      };
+    case 'sequence/nest': {
+      // Nest selected clips into a compound clip / sequence
+      const ids = action.ids?.length ? action.ids : state.selectedClipIds;
+      if (ids.length < 2) return state;
+      const selected = state.clips.filter((c) => ids.includes(c.id));
+      const seqId = uid('seq');
+      const earliest = Math.min(...selected.map((c) => c.start));
+      const latest = Math.max(...selected.map((c) => c.end));
+      const seq = {
+        id: seqId,
+        name: action.name ?? 'Compound Clip',
+        tracks: [], // simplified: real impl would derive unique tracks
+        clips: selected.map((c) => ({ ...c, start: c.start - earliest, end: c.end - earliest })),
+        transitions: [],
+        parentId: null
+      };
+      // Replace selected clips with a single compound clip reference
+      const compoundClip = {
+        id: uid('clip'),
+        trackId: selected[0].trackId,
+        mediaId: null,
+        kind: 'compound',
+        start: earliest,
+        end: latest,
+        srcIn: 0,
+        srcOut: latest - earliest,
+        speed: 1,
+        transform: defaultTransform(),
+        filters: defaultFilters(),
+        effects: [],
+        audio: defaultAudio(),
+        keyframes: [],
+        transitions: { in: null, out: null },
+        title: null,
+        reversed: false,
+        groupId: null,
+        linkedClipId: null,
+        adjustmentLayer: false,
+        sequenceId: seqId
+      };
+      return {
+        ...state,
+        sequences: state.sequences.concat([seq]),
+        clips: state.clips.filter((c) => !ids.includes(c.id)).concat([compoundClip]),
+        selectedClipIds: [compoundClip.id]
+      };
+    }
+
+    /* ===== Version History ===== */
+    case 'version/save': {
+      const entry = {
+        id: uid('ver'),
+        label: action.label ?? `Version ${state.versionHistory.length + 1}`,
+        savedAt: Date.now(),
+        snapshot: {
+          project: state.project,
+          media: state.media,
+          tracks: state.tracks,
+          clips: state.clips,
+          transitions: state.transitions,
+          markers: state.markers,
+          sequences: state.sequences,
+          groups: state.groups
+        }
+      };
+      return { ...state, versionHistory: state.versionHistory.concat([entry]) };
+    }
+    case 'version/restore': {
+      const entry = state.versionHistory.find((v) => v.id === action.id);
+      if (!entry?.snapshot) return state;
+      return { ...state, ...entry.snapshot };
+    }
+    case 'version/delete':
+      return { ...state, versionHistory: state.versionHistory.filter((v) => v.id !== action.id) };
+
+    /* ===== Track reorder ===== */
+    case 'track/reorder': {
+      const { fromIndex, toIndex } = action;
+      const tracks = state.tracks.slice();
+      if (fromIndex < 0 || fromIndex >= tracks.length || toIndex < 0 || toIndex >= tracks.length) return state;
+      const [moved] = tracks.splice(fromIndex, 1);
+      tracks.splice(toIndex, 0, moved);
+      return { ...state, tracks };
+    }
+
     default:
       return state;
   }
@@ -589,5 +1040,33 @@ export const HISTORY_ACTIONS = new Set([
   'clip/moveSelection',
   'clip/setSpeed',
   'clip/removeKeyframe',
-  'clip/updateKeyframe'
+  'clip/updateKeyframe',
+  // Phase 1/2 additions
+  'marker/add',
+  'marker/remove',
+  'marker/update',
+  'clipboard/cut',
+  'clipboard/paste',
+  'clip/group',
+  'clip/ungroup',
+  'clip/rippleDelete',
+  'clip/rollEdit',
+  'clip/slipEdit',
+  'clip/slideEdit',
+  'clip/freeze',
+  'clip/toggleReverse',
+  'clip/linkAudio',
+  'clip/unlinkAudio',
+  'clip/updateEffects',
+  'clip/addEffect',
+  'clip/removeEffect',
+  'clip/updateEffect',
+  'clip/reorderEffects',
+  'sequence/create',
+  'sequence/delete',
+  'sequence/nest',
+  'version/save',
+  'version/restore',
+  'version/delete',
+  'track/reorder'
 ]);

@@ -5,11 +5,13 @@ import { TITLE_PRESETS } from '../engine/titleCompositor.js';
 import { audioEngine } from '../engine/audioEngine.js';
 import { TEXT_MOTIONS } from '../engine/textMotion.js';
 import { TRANSITIONS } from '../engine/transitions.js';
+import { getEffect } from '../engine/effectsRegistry.js';
 
 const TABS = [
   { id: 'basic',      label: 'Basic' },
   { id: 'background', label: 'Background' },
   { id: 'smart',      label: 'Smart tools' },
+  { id: 'effects',    label: 'Effects' },
   { id: 'audio',      label: 'Audio' },
   { id: 'animation',  label: 'Animation' },
   { id: 'speed',      label: 'Speed' }
@@ -22,7 +24,7 @@ export function Inspector() {
 
   // Fallback to basic tab if activeTab is not relevant
   useEffect(() => {
-    if (clip && clip.kind === 'audio' && (activeTab === 'basic' || activeTab === 'background' || activeTab === 'smart')) {
+    if (clip && clip.kind === 'audio' && (activeTab === 'basic' || activeTab === 'background' || activeTab === 'smart' || activeTab === 'effects')) {
       setActiveTab('audio');
     } else if (clip && clip.kind === 'title' && (activeTab === 'background' || activeTab === 'smart')) {
       setActiveTab('basic');
@@ -42,7 +44,7 @@ export function Inspector() {
           {TABS.map((t) => {
             // Disable tabs that do not apply to specific clip types
             const disabled = 
-              (clip.kind === 'audio' && (t.id === 'basic' || t.id === 'background' || t.id === 'smart')) ||
+              (clip.kind === 'audio' && (t.id === 'basic' || t.id === 'background' || t.id === 'smart' || t.id === 'effects')) ||
               (clip.kind === 'title' && (t.id === 'background' || t.id === 'smart'));
             
             if (disabled) return null;
@@ -88,7 +90,11 @@ export function Inspector() {
           )}
 
           {activeTab === 'smart' && (
-            <SmartToolsPanel clip={clip} dispatch={dispatch} />
+            <SmartPanel clip={clip} state={state} dispatch={dispatch} />
+          )}
+
+          {activeTab === 'effects' && (
+            <EffectsPanel clip={clip} state={state} dispatch={dispatch} />
           )}
 
           {activeTab === 'audio' && (
@@ -793,6 +799,190 @@ function TransitionEdit({ side, clip, dispatch }) {
       </label>
       {kind && (
         <Slider label="Duration" min={0.1} max={2} step={0.05} value={dur} suffix="s" onChange={setDur} />
+      )}
+    </div>
+  );
+}
+
+function EffectsPanel({ clip, state, dispatch }) {
+  const effects = clip.effects ?? [];
+
+  const handleToggle = (fxId, val) => {
+    dispatch({ type: 'clip/updateEffect', id: clip.id, effectId: fxId, patch: { enabled: val } });
+  };
+
+  const handleParamChange = (fxId, paramName, value) => {
+    const fx = effects.find(e => e.id === fxId);
+    if (!fx) return;
+    const nextParams = { ...(fx.params ?? {}), [paramName]: value };
+    dispatch({ type: 'clip/updateEffect', id: clip.id, effectId: fxId, patch: { params: nextParams } });
+  };
+
+  const handleRemove = (fxId) => {
+    dispatch({ type: 'clip/removeEffect', id: clip.id, effectId: fxId });
+  };
+
+  const handleMove = (index, dir) => {
+    const toIndex = index + dir;
+    if (toIndex < 0 || toIndex >= effects.length) return;
+    dispatch({ type: 'clip/reorderEffects', id: clip.id, fromIndex: index, toIndex });
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h4 style={{ margin: 0, fontSize: '11px', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 'bold' }}>Effects Stack</h4>
+      </div>
+      
+      {effects.length === 0 ? (
+        <div style={{ padding: '24px 12px', border: '1px dashed #27272a', borderRadius: '6px', textAlign: 'center', color: '#71717a', fontSize: '12px' }}>
+          No custom effects applied. Drag/click effects from Left Control Panel to apply.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {effects.map((fx, idx) => {
+            const def = getEffect(fx.effectId);
+            if (!def) return null;
+            return (
+              <div 
+                key={fx.id} 
+                style={{ 
+                  background: '#18181b', 
+                  border: '1px solid #27272a', 
+                  borderRadius: '6px', 
+                  overflow: 'hidden' 
+                }}
+              >
+                {/* Header */}
+                <header style={{ 
+                  padding: '8px 12px', 
+                  background: '#09090b', 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center',
+                  borderBottom: '1px solid #27272a'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={fx.enabled !== false} 
+                      onChange={(e) => handleToggle(fx.id, e.target.checked)}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <strong style={{ fontSize: '12px', color: fx.enabled !== false ? '#fff' : '#71717a' }}>
+                      {def.label}
+                    </strong>
+                  </div>
+                  
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <button 
+                      className="cc-pill"
+                      onClick={() => handleMove(idx, -1)}
+                      disabled={idx === 0}
+                      title="Move Up"
+                      style={{ padding: '2px 4px', fontSize: '9px', opacity: idx === 0 ? 0.3 : 1 }}
+                    >
+                      ▲
+                    </button>
+                    <button 
+                      className="cc-pill"
+                      onClick={() => handleMove(idx, 1)}
+                      disabled={idx === effects.length - 1}
+                      title="Move Down"
+                      style={{ padding: '2px 4px', fontSize: '9px', opacity: idx === effects.length - 1 ? 0.3 : 1 }}
+                    >
+                      ▼
+                    </button>
+                    <button 
+                      className="cc-pill cc-pill--danger"
+                      onClick={() => handleRemove(fx.id)}
+                      title="Remove"
+                      style={{ padding: '2px 4px', fontSize: '9px' }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </header>
+
+                {/* Parameters */}
+                {fx.enabled !== false && (
+                  <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {(def.params ?? []).map((p) => {
+                      const val = fx.params?.[p.name] ?? p.default;
+                      return (
+                        <div key={p.name} className="cc-field" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span className="cc-field__label" style={{ fontSize: '11px', color: '#a1a1aa' }}>
+                              {p.label}
+                            </span>
+                            {(p.type === 'number' || p.type === 'range') && (
+                              <strong style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#fff' }}>
+                                {val.toFixed(p.step < 0.1 ? 2 : p.step < 1 ? 1 : 0)}
+                              </strong>
+                            )}
+                          </div>
+                          
+                          {(p.type === 'number' || p.type === 'range') && (
+                            <input
+                              type="range"
+                              min={p.min ?? 0}
+                              max={p.max ?? 1}
+                              step={p.step ?? 0.01}
+                              value={val}
+                              onChange={(e) => handleParamChange(fx.id, p.name, parseFloat(e.target.value))}
+                              style={{ width: '100%' }}
+                            />
+                          )}
+
+                          {p.type === 'color' && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <input
+                                type="color"
+                                value={val}
+                                onChange={(e) => handleParamChange(fx.id, p.name, e.target.value)}
+                                style={{ width: '28px', height: '20px', padding: 0, border: 'none', background: 'none', cursor: 'pointer' }}
+                              />
+                              <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#a1a1aa' }}>{val}</span>
+                            </div>
+                          )}
+
+                          {p.type === 'boolean' && (
+                            <input
+                              type="checkbox"
+                              checked={!!val}
+                              onChange={(e) => handleParamChange(fx.id, p.name, e.target.checked)}
+                              style={{ alignSelf: 'flex-start', cursor: 'pointer' }}
+                            />
+                          )}
+
+                          {p.type === 'select' && (
+                            <select
+                              value={val}
+                              onChange={(e) => handleParamChange(fx.id, p.name, e.target.value)}
+                              style={{
+                                width: '100%',
+                                background: '#121217',
+                                border: '1px solid #27272a',
+                                color: '#fff',
+                                padding: '4px 6px',
+                                borderRadius: '4px',
+                                fontSize: '11px'
+                              }}
+                            >
+                              {(p.options ?? []).map((opt) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );

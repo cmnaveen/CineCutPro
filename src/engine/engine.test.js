@@ -55,7 +55,7 @@ describe('textMotion', () => {
 });
 
 describe('registries', () => {
-  it('ships 13 transitions', () => expect(TRANSITIONS).toHaveLength(13));
+  it('ships 46 transitions', () => expect(TRANSITIONS).toHaveLength(46));
   it('every title preset declares a kind', () => {
     expect(TITLE_PRESETS.every((p) => p.kind === 'static' || p.kind === 'kinetic')).toBe(true);
   });

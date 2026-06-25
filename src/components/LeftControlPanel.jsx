@@ -4,6 +4,7 @@ import { Icon } from './icons/IconSet.jsx';
 import { formatHMS } from '../engine/timecode.js';
 import { putMedia } from '../engine/mediaStore.js';
 import { TRANSITIONS } from '../engine/transitions.js';
+import { getAllEffects, createEffectInstance } from '../engine/effectsRegistry.js';
 
 // Custom icons that are not in IconSet
 const CustomIcons = {
@@ -918,51 +919,85 @@ function TranscriptTabContent({ state, dispatch, query }) {
 
 /* ===== 8. EFFECTS TAB ===== */
 function EffectsTabContent({ state, dispatch, query }) {
-  const effects = [
-    { id: 'glitch', name: 'Cyberpunk Glitch', desc: 'Adds high contrast chromatic aberration', values: { brightness: 1.15, contrast: 1.3, saturation: 1.4 } },
-    { id: 'bloom', name: 'Dreamy Bloom', desc: 'Soft glow with lowered contrast', values: { brightness: 1.25, contrast: 0.85, saturation: 1.1 } },
-    { id: 'cyber', name: 'Neon Cyber', desc: 'High saturation blue-pink hue rotate', values: { saturation: 1.5, hueRotate: 90, contrast: 1.2 } },
-    { id: 'sepia', name: 'Vintage Sepia', desc: 'Warm golden sepia tint', values: { hueRotate: 30, saturation: 0.45, brightness: 0.95 } },
-    { id: 'bw', name: 'Classic Noir', desc: 'Grayscale high contrast film look', values: { saturation: 0, contrast: 1.4, brightness: 1.05 } }
-  ];
+  const allRegistryEffects = useMemo(() => getAllEffects(), []);
 
-  const applyEffect = (eff) => {
+  const applyEffect = (effectId) => {
     const activeId = state.selectedClipIds[0];
     if (!activeId) {
       dispatch({ type: 'toast/push', kind: 'error', message: 'Please select a clip on the timeline first!' });
       return;
     }
+    const inst = createEffectInstance(effectId);
+    if (!inst) return;
     dispatch({
-      type: 'clip/updateFilters',
+      type: 'clip/addEffect',
       id: activeId,
-      patch: eff.values
+      effect: inst
     });
-    dispatch({ type: 'toast/push', kind: 'success', message: `Applied effect: ${eff.name}` });
+    dispatch({ type: 'toast/push', kind: 'success', message: `Added effect: ${effectId}` });
   };
 
+  const filteredEffects = useMemo(() => {
+    if (!query) return allRegistryEffects;
+    const q = query.toLowerCase();
+    return allRegistryEffects.filter(
+      (e) => e.label.toLowerCase().includes(q) || e.group.toLowerCase().includes(q)
+    );
+  }, [allRegistryEffects, query]);
+
+  // Group by group name
+  const grouped = useMemo(() => {
+    const groups = {};
+    for (const e of filteredEffects) {
+      groups[e.group] = groups[e.group] ?? [];
+      groups[e.group].push(e);
+    }
+    return groups;
+  }, [filteredEffects]);
+
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-      {effects.filter(e => query ? e.name.toLowerCase().includes(query.toLowerCase()) : true).map((eff) => (
-        <div
-          key={eff.id}
-          className="cc-element-card"
-          onClick={() => applyEffect(eff)}
-          style={{ cursor: 'pointer', padding: '8px' }}
-        >
-          <div style={{
-            height: '42px',
-            borderRadius: '4px',
-            background: `linear-gradient(45deg, #18181b 0%, hsl(${(parseInt(eff.id, 36) * 45) % 360} 60% 25%) 100%)`,
-            display: 'grid',
-            placeItems: 'center',
-            fontWeight: 'bold',
-            fontSize: '10px'
-          }}>
-            ✨ FX
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {Object.entries(grouped).map(([groupName, list]) => (
+        <div key={groupName} className="cc-template-row" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div className="cc-template-row__header" style={{ margin: 0 }}>
+            <span className="cc-template-row__title" style={{ fontSize: '12px', opacity: 0.8 }}>
+              {groupName}
+            </span>
           </div>
-          <div className="cc-element-card__info" style={{ fontSize: '11px', fontWeight: 'bold' }}>{eff.name}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            {list.map((eff) => (
+              <div
+                key={eff.id}
+                className="cc-element-card"
+                onClick={() => applyEffect(eff.id)}
+                style={{ cursor: 'pointer', padding: '8px' }}
+              >
+                <div style={{
+                  height: '42px',
+                  borderRadius: '4px',
+                  background: 'linear-gradient(135deg, #1e1b4b 0%, #311042 100%)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  fontWeight: 'bold',
+                  fontSize: '10px',
+                  color: '#e0aaff',
+                  border: '1px solid rgba(255,255,255,0.05)'
+                }}>
+                  ✨ {eff.label.slice(0, 12)}
+                </div>
+                <div className="cc-element-card__info" style={{ fontSize: '11px', fontWeight: 'bold', padding: '4px 0 0' }}>
+                  {eff.label}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       ))}
+      {filteredEffects.length === 0 && (
+        <div style={{ padding: '20px', textAlign: 'center', color: '#71717a', fontSize: '12px' }}>
+          No matching effects found.
+        </div>
+      )}
     </div>
   );
 }

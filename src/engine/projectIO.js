@@ -6,9 +6,14 @@
  * carries enough metadata to reattach the same file in a re-import flow.
  * After loading a JSON, the editor presents the missing-media items and the
  * user re-attaches them via drag-drop.
+ *
+ * v2: added markers, sequences, groups, versionHistory persistence.
+ *     Supports importing v1 projects with automatic migration.
  */
 
-const VERSION = 1;
+import { migrate, needsMigration } from './migrator.js';
+
+const VERSION = 2;
 const PERSIST_KEYS = [
   'project',
   'media',
@@ -18,12 +23,19 @@ const PERSIST_KEYS = [
   'inPoint',
   'outPoint',
   'analyzer',
-  'master'
+  'master',
+  // v2 additions
+  'markers',
+  'sequences',
+  'groups',
+  'versionHistory'
 ];
 
 export function exportProject(state) {
   const out = { version: VERSION, savedAt: Date.now() };
-  for (const k of PERSIST_KEYS) out[k] = state[k];
+  for (const k of PERSIST_KEYS) {
+    if (state[k] !== undefined) out[k] = state[k];
+  }
   // Drop blob URLs — they won't resolve on reload anyway.
   out.media = (state.media ?? []).map((m) => ({
     ...m,
@@ -47,11 +59,20 @@ export function downloadProject(state, filename) {
 
 export function importProjectText(text) {
   const data = JSON.parse(text);
-  if (data?.version !== VERSION) {
+  // Support both v1 and v2 projects
+  if (!data?.version || (data.version !== 1 && data.version !== 2)) {
     throw new Error(`Unsupported project version: ${data?.version}`);
   }
   const snapshot = {};
-  for (const k of PERSIST_KEYS) snapshot[k] = data[k];
+  // Use a broader key set for compatibility — missing keys will just be undefined
+  const allKeys = new Set([...PERSIST_KEYS, 'project', 'media', 'tracks', 'clips', 'transitions', 'inPoint', 'outPoint', 'analyzer', 'master']);
+  for (const k of allKeys) {
+    if (data[k] !== undefined) snapshot[k] = data[k];
+  }
+  // Apply migration if needed
+  if (needsMigration(snapshot)) {
+    return migrate(snapshot);
+  }
   return snapshot;
 }
 
@@ -105,3 +126,4 @@ export function readAutosave() {
 export function clearAutosave() {
   try { localStorage.removeItem(AUTOSAVE_KEY); } catch (_) {}
 }
+

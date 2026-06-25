@@ -3,14 +3,31 @@
  *
  * The state shape is intentionally flat-ish so reducer transitions stay cheap
  * and the history stack can deep-clone in one pass.
+ *
+ * State version: 2
+ * Changes from v1:
+ *   - Added sequences, markers, clipboard, versionHistory slices
+ *   - Extended project config (colorSpace, sampleRate, bitDepth, proxyMode, autoSaveInterval)
+ *   - Extended UI flags (timelineMode, panelLayout, effectsBrowserOpen, etc.)
+ *   - Added clip.effects[] (composable effects pipeline)
+ *   - Added clip.reversed, clip.grouped, clip.linkedClipId, clip.adjustmentLayer
  */
+
+export const STATE_VERSION = 2;
 
 export const TRACK_KINDS = Object.freeze({
   VIDEO: 'video',
   OVERLAY: 'overlay',
   SUBTITLE: 'subtitle',
   TITLE: 'title',
-  AUDIO: 'audio'
+  AUDIO: 'audio',
+  ADJUSTMENT: 'adjustment'
+});
+
+export const TIMELINE_MODES = Object.freeze({
+  FREEFORM: 'freeform',
+  MAGNETIC: 'magnetic',
+  RIPPLE: 'ripple'
 });
 
 export const FPS = 30;
@@ -59,16 +76,37 @@ export const initialState = {
     fps: FPS,
     createdAt: Date.now(),
     dirty: false,
-    background: { type: 'color', color: '#05080f', blur: 15 }
+    background: { type: 'color', color: '#05080f', blur: 15 },
+    colorSpace: 'rec709',      // 'rec709' | 'rec2020' | 'srgb'
+    sampleRate: 48000,          // 44100 | 48000 | 96000
+    bitDepth: 16,               // 16 | 24 | 32
+    proxyMode: false,           // when true, use low-res proxies during editing
+    autoSaveInterval: 30        // seconds between autosaves
   },
 
   /* ---------- Media bin ---------- */
-  media: [], // { id, name, kind: 'video'|'audio'|'image'|'title', src, duration, thumb, meta }
+  media: [], // { id, name, kind: 'video'|'audio'|'image'|'title', src, duration, thumb, meta, proxyUrl }
 
   /* ---------- Timeline ---------- */
   tracks: initialTracks,
-  clips: [], // { id, trackId, mediaId, start, end, srcIn, srcOut, transform, filters, transitions, keyframes, title }
+  clips: [], // { id, trackId, mediaId, start, end, srcIn, srcOut, transform, filters, effects, transitions, keyframes, title, reversed, groupId, linkedClipId, adjustmentLayer }
   transitions: [], // standalone marker { id, clipId, side:'in'|'out', kind, duration }
+
+  /* ---------- Sequences (nested timelines / compound clips) ---------- */
+  sequences: [],    // { id, name, tracks, clips, transitions, parentId }
+  activeSequenceId: null, // null = root timeline; string = inside nested sequence
+
+  /* ---------- Timeline Markers ---------- */
+  markers: [],      // { id, time, label, color, chapter: bool }
+
+  /* ---------- Clipboard ---------- */
+  clipboard: [],    // copied clip snapshots for paste operations
+
+  /* ---------- Clip Groups ---------- */
+  groups: [],       // { id, clipIds: string[] }
+
+  /* ---------- Version History ---------- */
+  versionHistory: [], // { id, label, savedAt, snapshot }
 
   /* ---------- Playback ---------- */
   playhead: 0,
@@ -115,7 +153,17 @@ export const initialState = {
     rubberBand: null,    // { x0, y0, x1, y1 } during drag
     monitorMode: 'dual', // 'dual' | 'single' — Source + Program vs Program only
     fitToWindow: false,  // when true, timeline pps auto-fits content to viewport
-    projectSettingsOpen: false
+    projectSettingsOpen: false,
+    timelineMode: 'freeform', // 'freeform' | 'magnetic' | 'ripple'
+    effectsBrowserOpen: false,
+    colorGradingOpen: false,
+    audioMixerOpen: false,
+    multicamOpen: false,
+    markersOpen: false,
+    templateLibraryOpen: false,
+    renderQuality: 'full', // 'full' | 'half' | 'quarter'
+    panelLayout: 'default', // 'default' | 'color' | 'audio' | 'effects' | 'minimal'
+    gridOverlay: 'none' // 'none' | 'thirds' | 'golden' | 'crosshair' | '4x4'
   },
 
   /* ---------- Toasts ---------- */

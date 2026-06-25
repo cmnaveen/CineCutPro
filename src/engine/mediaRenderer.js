@@ -14,6 +14,7 @@
 import { drawTitle, drawSubtitle } from './titleCompositor.js';
 import { runTransition } from './transitions.js';
 import { applyChromaKey } from './chromaKey.js';
+import { applyEffectsStack } from './effectsRegistry.js';
 
 const PROGRAM_W = 1920;
 const PROGRAM_H = 1080;
@@ -294,59 +295,145 @@ class MediaRenderer {
     const w = this.width || PROGRAM_W;
     const h = this.height || PROGRAM_H;
 
-    ctx.save();
-    ctx.globalAlpha = opacity;
-    ctx.filter = this._filterFor(clip);
-    ctx.translate(w / 2 + x, h / 2 + y);
-    ctx.rotate((rotation * Math.PI) / 180);
-    ctx.scale(scale, scale);
+    const hasEffects = (clip.effects && clip.effects.some((e) => e.enabled !== false)) || clip.filters?.chromaKey?.enabled;
 
-    if (clip.kind === 'title' && clip.title) {
-      ctx.translate(-w / 2, -h / 2);
-      drawTitle(ctx, clip.title, this.programCanvas, localT, clip.end - clip.start);
-    } else if (clip.kind === 'subtitle') {
-      ctx.translate(-w / 2, -h / 2);
-      drawSubtitle(ctx, clip.title ?? { text: '— subtitle —', valign: 'bottom' });
-    } else if (media && media.kind === 'image') {
-      const el = this.mediaElements.get(media.id);
-      if (el) {
-        const sw = el.naturalWidth || el.width || w;
-        const sh = el.naturalHeight || el.height || h;
-        const cx = sw * crop.left;
-        const cy = sh * crop.top;
-        const cw = sw * (1 - crop.left - crop.right);
-        const ch = sh * (1 - crop.top - crop.bottom);
-        const srcAR = cw / ch;
-        const targetAR = w / h;
-        let dw = w;
-        let dh = h;
-        if (srcAR > targetAR) dh = w / srcAR;
-        else dw = h * srcAR;
-        ctx.drawImage(el, cx, cy, cw, ch, -dw / 2, -dh / 2, dw, dh);
+    if (hasEffects) {
+      const scratch = this._ensureChromaScratch();
+      scratch.ctx.clearRect(0, 0, w, h);
+      scratch.ctx.save();
+      scratch.ctx.filter = this._filterFor(clip);
+
+      if (clip.kind === 'title' && clip.title) {
+        scratch.ctx.translate(0, 0); // Reset translation in scratch space, drawTitle handles centering/margins
+        drawTitle(scratch.ctx, clip.title, this.programCanvas, localT, clip.end - clip.start);
+      } else if (clip.kind === 'subtitle') {
+        drawSubtitle(scratch.ctx, clip.title ?? { text: '— subtitle —', valign: 'bottom' });
+      } else if (media && media.kind === 'image') {
+        const el = this.mediaElements.get(media.id);
+        if (el) {
+          const sw = el.naturalWidth || el.width || w;
+          const sh = el.naturalHeight || el.height || h;
+          const cx = sw * crop.left;
+          const cy = sh * crop.top;
+          const cw = sw * (1 - crop.left - crop.right);
+          const ch = sh * (1 - crop.top - crop.bottom);
+          const srcAR = cw / ch;
+          const targetAR = w / h;
+          let dw = w;
+          let dh = h;
+          if (srcAR > targetAR) dh = w / srcAR;
+          else dw = h * srcAR;
+          scratch.ctx.drawImage(el, cx, cy, cw, ch, (w - dw) / 2, (h - dh) / 2, dw, dh);
+        }
+      } else if (media && media.kind === 'video') {
+        const el = this.mediaElements.get(media.id);
+        if (el) {
+          const sw = el.videoWidth || w;
+          const sh = el.videoHeight || h;
+          const cx = sw * crop.left;
+          const cy = sh * crop.top;
+          const cw = sw * (1 - crop.left - crop.right);
+          const ch = sh * (1 - crop.top - crop.bottom);
+          const srcAR = cw / ch;
+          const targetAR = w / h;
+          let dw = w;
+          let dh = h;
+          if (srcAR > targetAR) dh = w / srcAR;
+          else dw = h * srcAR;
+          
+          const ck = clip.filters?.chromaKey;
+          if (ck?.enabled) {
+            scratch.ctx.drawImage(el, cx, cy, cw, ch, (w - dw) / 2, (h - dh) / 2, dw, dh);
+            applyChromaKey(scratch.ctx, w, h, ck);
+          } else {
+            scratch.ctx.drawImage(el, cx, cy, cw, ch, (w - dw) / 2, (h - dh) / 2, dw, dh);
+          }
+        } else {
+          scratch.ctx.fillStyle = '#1a2434';
+          scratch.ctx.fillRect(0, 0, w, h);
+        }
       }
-    } else if (media && media.kind === 'video') {
-      const el = this.mediaElements.get(media.id);
-      if (el) {
-        const sw = el.videoWidth || w;
-        const sh = el.videoHeight || h;
-        this._drawVideoFrame(ctx, clip, media, el, sw, sh, crop);
-      } else {
-        ctx.fillStyle = '#1a2434';
+
+      const vig = clip.filters?.vignette ?? 0;
+      if (vig > 0.001) {
+        scratch.ctx.filter = 'none';
+        const g = scratch.ctx.createRadialGradient(w / 2, h / 2, w * 0.25, w / 2, h / 2, w * 0.62);
+        g.addColorStop(0, 'rgba(0,0,0,0)');
+        g.addColorStop(1, `rgba(0,0,0,${vig})`);
+        scratch.ctx.fillStyle = g;
+        scratch.ctx.fillRect(0, 0, w, h);
+      }
+      scratch.ctx.restore();
+
+      // Apply the composable effects stack!
+      if (clip.effects?.length) {
+        applyEffectsStack(scratch.ctx, w, h, clip.effects, localT);
+      }
+
+      // Draw scratch onto target track context with transformation
+      ctx.save();
+      ctx.globalAlpha = opacity;
+      ctx.translate(w / 2 + x, h / 2 + y);
+      ctx.rotate((rotation * Math.PI) / 180);
+      ctx.scale(scale, scale);
+      ctx.drawImage(scratch.canvas, -w / 2, -h / 2);
+      ctx.restore();
+    } else {
+      // Direct path (no scratch canvas) for high performance
+      ctx.save();
+      ctx.globalAlpha = opacity;
+      ctx.filter = this._filterFor(clip);
+      ctx.translate(w / 2 + x, h / 2 + y);
+      ctx.rotate((rotation * Math.PI) / 180);
+      ctx.scale(scale, scale);
+
+      if (clip.kind === 'title' && clip.title) {
+        ctx.translate(-w / 2, -h / 2);
+        drawTitle(ctx, clip.title, this.programCanvas, localT, clip.end - clip.start);
+      } else if (clip.kind === 'subtitle') {
+        ctx.translate(-w / 2, -h / 2);
+        drawSubtitle(ctx, clip.title ?? { text: '— subtitle —', valign: 'bottom' });
+      } else if (media && media.kind === 'image') {
+        const el = this.mediaElements.get(media.id);
+        if (el) {
+          const sw = el.naturalWidth || el.width || w;
+          const sh = el.naturalHeight || el.height || h;
+          const cx = sw * crop.left;
+          const cy = sh * crop.top;
+          const cw = sw * (1 - crop.left - crop.right);
+          const ch = sh * (1 - crop.top - crop.bottom);
+          const srcAR = cw / ch;
+          const targetAR = w / h;
+          let dw = w;
+          let dh = h;
+          if (srcAR > targetAR) dh = w / srcAR;
+          else dw = h * srcAR;
+          ctx.drawImage(el, cx, cy, cw, ch, -dw / 2, -dh / 2, dw, dh);
+        }
+      } else if (media && media.kind === 'video') {
+        const el = this.mediaElements.get(media.id);
+        if (el) {
+          const sw = el.videoWidth || w;
+          const sh = el.videoHeight || h;
+          this._drawVideoFrame(ctx, clip, media, el, sw, sh, crop);
+        } else {
+          ctx.fillStyle = '#1a2434';
+          ctx.fillRect(-w / 2, -h / 2, w, h);
+        }
+      }
+
+      const vig = clip.filters?.vignette ?? 0;
+      if (vig > 0.001) {
+        ctx.filter = 'none';
+        const g = ctx.createRadialGradient(0, 0, w * 0.25, 0, 0, w * 0.62);
+        g.addColorStop(0, 'rgba(0,0,0,0)');
+        g.addColorStop(1, `rgba(0,0,0,${vig})`);
+        ctx.fillStyle = g;
         ctx.fillRect(-w / 2, -h / 2, w, h);
       }
-    }
 
-    const vig = clip.filters?.vignette ?? 0;
-    if (vig > 0.001) {
-      ctx.filter = 'none';
-      const g = ctx.createRadialGradient(0, 0, w * 0.25, 0, 0, w * 0.62);
-      g.addColorStop(0, 'rgba(0,0,0,0)');
-      g.addColorStop(1, `rgba(0,0,0,${vig})`);
-      ctx.fillStyle = g;
-      ctx.fillRect(-w / 2, -h / 2, w, h);
+      ctx.restore();
     }
-
-    ctx.restore();
   }
 
   _transitionContext(state, c, t) {

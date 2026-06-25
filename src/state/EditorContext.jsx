@@ -1,9 +1,10 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
 import { initialState, FPS } from './initialState.js';
 import { reducer as baseReducer, HISTORY_ACTIONS } from './editorReducer.js';
-import { emptyHistory, pushHistory, undo as undoFn, redo as redoFn } from './history.js';
+import { emptyHistory, pushHistory, undo as undoFn, redo as redoFn, undoLabel, redoLabel } from './history.js';
 import { readAutosave, writeAutosave } from '../engine/projectIO.js';
 import { getMedia } from '../engine/mediaStore.js';
+import { migrate, needsMigration } from '../engine/migrator.js';
 
 const EditorContext = createContext(null);
 
@@ -22,7 +23,12 @@ function reducer(state, action) {
 export function EditorProvider({ children }) {
   const [state, baseDispatch] = useReducer(reducer, initialState, (init) => {
     const snap = readAutosave();
-    return snap ? { ...init, ...snap } : init;
+    if (snap) {
+      // Apply migration if needed
+      const migrated = needsMigration(snap) ? migrate(snap) : snap;
+      return { ...init, ...migrated };
+    }
+    return init;
   });
   const historyRef = useRef(emptyHistory());
   const stateRef = useRef(state);
@@ -33,7 +39,7 @@ export function EditorProvider({ children }) {
       // Reducer is pure: a dry-run lets us skip history when the action no-ops.
       const next = baseReducer(stateRef.current, action);
       if (next !== stateRef.current) {
-        historyRef.current = pushHistory(historyRef.current, stateRef.current);
+        historyRef.current = pushHistory(historyRef.current, stateRef.current, action.type);
       }
     }
     baseDispatch(action);
@@ -79,7 +85,7 @@ export function EditorProvider({ children }) {
   useEffect(() => {
     const id = setTimeout(() => writeAutosave(stateRef.current), 800);
     return () => clearTimeout(id);
-  }, [state.project, state.media, state.tracks, state.clips, state.transitions, state.inPoint, state.outPoint, state.master, state.analyzer]);
+  }, [state.project, state.media, state.tracks, state.clips, state.transitions, state.inPoint, state.outPoint, state.master, state.analyzer, state.markers, state.sequences, state.groups]);
 
   const selectedClips = useMemo(
     () => state.clips.filter((c) => state.selectedClipIds.includes(c.id)),
@@ -100,7 +106,9 @@ export function EditorProvider({ children }) {
       selectedClips,
       duration,
       fps: FPS,
-      historyDepth: historyRef.current.past.length
+      historyDepth: historyRef.current.past.length,
+      undoLabel: undoLabel(historyRef.current),
+      redoLabel: redoLabel(historyRef.current)
     }),
     // historyDepth is intentionally not tracked precisely: it is informational.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -109,3 +117,4 @@ export function EditorProvider({ children }) {
 
   return <EditorContext.Provider value={value}>{children}</EditorContext.Provider>;
 }
+

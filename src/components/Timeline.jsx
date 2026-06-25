@@ -15,6 +15,7 @@ export function Timeline() {
   const innerRef = useRef(null);
   const width = TRACK_HEAD_W + Math.max(1200, duration * pps);
   const [dragMode, setDragMode] = useState(null);
+  const [activeSnapTime, setActiveSnapTime] = useState(null);
 
   /* ── Zoom on Ctrl+wheel (manual zoom disables Fit) ─────── */
   const onWheel = useCallback(
@@ -77,7 +78,7 @@ export function Timeline() {
       <TimelineToolbar state={state} dispatch={dispatch} pps={pps} />
       <div className="cc-timeline__scroll" ref={scrollRef} onWheel={onWheel}>
         <div className="cc-timeline__inner" ref={innerRef} style={{ width }}>
-          <Ruler width={width} pps={pps} duration={duration} onSeek={seek} state={state} />
+          <Ruler width={width} pps={pps} duration={duration} onSeek={seek} state={state} dispatch={dispatch} />
           <Playhead pps={pps} playhead={state.playhead} />
           {state.tracks.map((track) => (
             <TrackRow
@@ -90,8 +91,25 @@ export function Timeline() {
               dragMode={dragMode}
               setDragMode={setDragMode}
               innerRef={innerRef}
+              setActiveSnapTime={setActiveSnapTime}
             />
           ))}
+          {activeSnapTime !== null && (
+            <div
+              className="cc-snap-guide"
+              style={{
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                width: '1.5px',
+                background: '#ff3b30',
+                boxShadow: '0 0 6px #ff3b30',
+                zIndex: 5,
+                pointerEvents: 'none',
+                left: TRACK_HEAD_W + activeSnapTime * pps
+              }}
+            />
+          )}
           <RubberBand state={state} />
         </div>
       </div>
@@ -122,6 +140,32 @@ function TimelineToolbar({ state, dispatch, pps }) {
       </button>
       <button className="cc-icon-btn cc-icon-btn--danger" onClick={() => dispatch({ type: 'clip/delete', ripple: true })} title="Ripple delete (Shift+Del)">
         Ripple Del
+      </button>
+      <span className="cc-transport__divider" />
+      <div className="cc-edit-mode-selector" style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(0,0,0,0.2)', padding: '2px', borderRadius: '6px' }}>
+        <button
+          className={`cc-btn cc-btn--sm ${state.ui.timelineMode === 'freeform' ? 'cc-btn--accent' : 'cc-btn--text'}`}
+          style={{ padding: '4px 8px', fontSize: '11px', height: '24px', lineHeight: '16px' }}
+          onClick={() => dispatch({ type: 'ui/set', key: 'timelineMode', value: 'freeform' })}
+          title="Freeform editing"
+        >
+          Freeform
+        </button>
+        <button
+          className={`cc-btn cc-btn--sm ${state.ui.timelineMode === 'magnetic' ? 'cc-btn--accent' : 'cc-btn--text'}`}
+          style={{ padding: '4px 8px', fontSize: '11px', height: '24px', lineHeight: '16px' }}
+          onClick={() => dispatch({ type: 'ui/set', key: 'timelineMode', value: 'magnetic' })}
+          title="Magnetic timeline"
+        >
+          🧲 Magnetic
+        </button>
+      </div>
+      <button
+        className={`cc-icon-btn ${state.ui.markersOpen ? 'is-on' : ''}`}
+        onClick={() => dispatch({ type: 'ui/toggle', key: 'markersOpen' })}
+        title="Open Markers panel"
+      >
+        📍 Markers
       </button>
       <span className="cc-transport__divider" />
       <button
@@ -224,7 +268,7 @@ function subtitleTrackId(state) {
 
 /* ─────────────────────────── Ruler ─────────────────────────── */
 
-function Ruler({ width, pps, duration, onSeek, state }) {
+function Ruler({ width, pps, duration, onSeek, state, dispatch }) {
   const secPerMajor =
     pps >= 200 ? 1 :
     pps >= 100 ? 2 :
@@ -240,6 +284,7 @@ function Ruler({ width, pps, duration, onSeek, state }) {
       className="cc-ruler"
       style={{ width }}
       onMouseDown={(e) => {
+        if (e.target.classList.contains('cc-ruler__marker-pin')) return;
         const move = (ev) => onSeek(ev.clientX);
         const up = () => {
           window.removeEventListener('mousemove', move);
@@ -248,6 +293,21 @@ function Ruler({ width, pps, duration, onSeek, state }) {
         window.addEventListener('mousemove', move);
         window.addEventListener('mouseup', up);
         onSeek(e.clientX);
+      }}
+      onDoubleClick={(e) => {
+        if (e.target.classList.contains('cc-ruler__marker-pin')) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = e.clientX - rect.left - TRACK_HEAD_W;
+        const at = Math.max(0, x / pps);
+        dispatch({
+          type: 'marker/add',
+          time: at,
+          label: `Marker ${(state.markers?.length ?? 0) + 1}`,
+          color: '#fbbf24',
+          chapter: false
+        });
+        dispatch({ type: 'ui/set', key: 'markersOpen', value: true });
+        dispatch({ type: 'toast/push', kind: 'success', message: 'Added timeline marker' });
       }}
     >
       {majors.map((s) => (
@@ -261,6 +321,32 @@ function Ruler({ width, pps, duration, onSeek, state }) {
       {state.outPoint != null && (
         <div className="cc-ruler__mark cc-ruler__mark--out" style={{ left: TRACK_HEAD_W + state.outPoint * pps }}>O</div>
       )}
+      {state.markers?.map((m) => (
+        <div
+          key={m.id}
+          className="cc-ruler__marker-pin"
+          style={{
+            position: 'absolute',
+            top: '2px',
+            left: TRACK_HEAD_W + m.time * pps,
+            width: '10px',
+            height: '10px',
+            background: m.color,
+            borderRadius: '50% 50% 50% 0',
+            transform: 'rotate(-45deg) translateX(-50%)',
+            cursor: 'pointer',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.5)',
+            border: m.chapter ? '1.5px solid #ffffff' : '1px solid rgba(255,255,255,0.4)',
+            zIndex: 10
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            dispatch({ type: 'playback/setPlayhead', t: m.time });
+            dispatch({ type: 'ui/set', key: 'markersOpen', value: true });
+          }}
+          title={`${m.label || 'Marker'} @ ${formatTC(m.time)} ${m.chapter ? '(YouTube Chapter)' : ''}`}
+        />
+      ))}
     </div>
   );
 }
@@ -276,7 +362,7 @@ function Playhead({ pps, playhead }) {
 
 /* ─────────────────────────── Track row ─────────────────────────── */
 
-function TrackRow({ track, pps, width, state, dispatch, dragMode, setDragMode, innerRef }) {
+function TrackRow({ track, pps, width, state, dispatch, dragMode, setDragMode, innerRef, setActiveSnapTime }) {
   const clips = state.clips.filter((c) => c.trackId === track.id);
 
   const onDrop = useCallback(
@@ -423,6 +509,7 @@ function TrackRow({ track, pps, width, state, dispatch, dragMode, setDragMode, i
             pps={pps}
             dragMode={dragMode}
             setDragMode={setDragMode}
+            setActiveSnapTime={setActiveSnapTime}
           />
         ))}
       </div>
@@ -433,7 +520,7 @@ function TrackRow({ track, pps, width, state, dispatch, dragMode, setDragMode, i
 
 /* ─────────────────────────── Clip block ─────────────────────────── */
 
-function ClipBlock({ clip, track, state, dispatch, pps, dragMode, setDragMode }) {
+function ClipBlock({ clip, track, state, dispatch, pps, dragMode, setDragMode, setActiveSnapTime }) {
   const selected = state.selectedClipIds.includes(clip.id);
   const media = state.media.find((m) => m.id === clip.mediaId);
 
@@ -452,19 +539,29 @@ function ClipBlock({ clip, track, state, dispatch, pps, dragMode, setDragMode })
 
   const snap = useCallback(
     (proposedT) => {
-      if (!state.snap) return proposedT;
+      if (!state.snap) {
+        setActiveSnapTime(null);
+        return proposedT;
+      }
       let best = proposedT;
       let bestDist = SNAP_PX / pps;
+      let snapped = false;
       for (const tgt of snapTargets) {
         const d = Math.abs(tgt - proposedT);
         if (d < bestDist) {
           bestDist = d;
           best = tgt;
+          snapped = true;
         }
+      }
+      if (snapped) {
+        setActiveSnapTime(best);
+      } else {
+        setActiveSnapTime(null);
       }
       return best;
     },
-    [state.snap, snapTargets, pps]
+    [state.snap, snapTargets, pps, setActiveSnapTime]
   );
 
   const onMouseDown = useCallback(
@@ -494,6 +591,7 @@ function ClipBlock({ clip, track, state, dispatch, pps, dragMode, setDragMode })
         window.removeEventListener('mousemove', onMove);
         window.removeEventListener('mouseup', onUp);
         setDragMode(null);
+        setActiveSnapTime(null);
       };
       window.addEventListener('mousemove', onMove);
       window.addEventListener('mouseup', onUp);
@@ -517,6 +615,7 @@ function ClipBlock({ clip, track, state, dispatch, pps, dragMode, setDragMode })
       const onUp = () => {
         window.removeEventListener('mousemove', onMove);
         window.removeEventListener('mouseup', onUp);
+        setActiveSnapTime(null);
       };
       window.addEventListener('mousemove', onMove);
       window.addEventListener('mouseup', onUp);

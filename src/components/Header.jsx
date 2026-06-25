@@ -157,6 +157,26 @@ export function Header() {
         >
           <Icon.Layers size={13} /> {state.ui.monitorMode === 'dual' ? 'Dual' : 'Single'}
         </button>
+
+        <select
+          value={state.ui.panelLayout}
+          onChange={(e) => dispatch({ type: 'ui/set', key: 'panelLayout', value: e.target.value })}
+          style={{
+            background: '#121215',
+            color: '#f4f4f5',
+            border: '1px solid #27272a',
+            borderRadius: '6px',
+            fontSize: '11px',
+            padding: '4px 8px',
+            outline: 'none',
+            cursor: 'pointer'
+          }}
+          title="Switch workspace layout"
+        >
+          <option value="default">🎬 Edit Workspace</option>
+          <option value="color">🎨 Color Grading</option>
+          <option value="audio">🔊 Audio Mixer</option>
+        </select>
         
         <button
           className="cc-btn cc-btn--ghost"
