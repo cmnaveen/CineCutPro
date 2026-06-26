@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { useEditor } from '../state/EditorContext.jsx';
 import { Icon } from './icons/IconSet.jsx';
 import { analyze } from '../engine/analyzer.js';
@@ -7,7 +7,7 @@ import { formatTC } from '../engine/timecode.js';
 export function AnalyzerSlideout() {
   const { state, dispatch } = useEditor();
   const open = state.ui.analyzerOpen;
-  const report = useMemo(() => analyze(state), [state.clips, state.analyzer]);
+  const report = useMemo(() => analyze(state), [state]);
 
   const focusClip = (id, jump) => {
     dispatch({ type: 'select/clips', ids: [id] });

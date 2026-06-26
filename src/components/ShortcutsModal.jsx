@@ -1,4 +1,3 @@
-import React from 'react';
 import { useEditor } from '../state/EditorContext.jsx';
 import { Icon } from './icons/IconSet.jsx';
 

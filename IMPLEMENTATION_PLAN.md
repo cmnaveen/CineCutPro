@@ -26,6 +26,7 @@
 16. [Plugin architecture & SDK](#16-plugin-architecture--sdk)
 17. [Complete feature matrix](#17-complete-feature-matrix)
 18. [Phased development roadmap](#18-phased-development-roadmap)
+    - [18b. Native core track (C++/Rust pro engine)](#18b-native-core-track-crust-pro-engine--the-hybrids-second-rail)
 19. [Testing, QA & release engineering](#19-testing-qa--release-engineering)
 20. [Risks, trade-offs & open questions](#20-risks-trade-offs--open-questions)
 21. [Folder structure (target)](#21-folder-structure-target)
@@ -79,11 +80,15 @@ The strategy below **preserves the good parts** (reducer discipline, renderer-ow
 
 ## 3. The core architectural decision
 
-The single most consequential choice is **how to escape the browser sandbox without throwing away the web app**. Recommendation:
+The single most consequential choice is **how to escape the browser sandbox without throwing away the web app**.
 
-> **Adopt a layered "engine core + pluggable backends" architecture, ship it inside a Tauri 2 desktop shell, and keep a WebGPU-based PWA build from the same codebase.**
+> **Decision (confirmed): the HYBRID strategy.** Keep shipping and evolving the **web app** (the current React/TS codebase + the merged Phase 0 edit-engine core) as the always-runnable product, and in parallel build a **native pro core** (C++/Rust) for the desktop tier. Both sit behind the same capability interfaces; a Tauri 2 shell hosts the web UI over the native core. The web build runs a reduced tier; the desktop build unlocks native codecs, GPU, OpenFX/VST, and large-project performance.
+>
+> This is what makes the plan a **superset** of both the web-first roadmap *and* the native-C++ roadmap (see §18b): native-only deliverables (OpenFX host, FreeType/HarfBuzz shaping, Vulkan/Metal/DX12, lock-free audio, zero-copy VRAM) live in the native core track; everything else ships on the web track first and is shared.
 
-**Why Tauri 2 over Electron:** dramatically smaller binaries and memory, a **Rust** backend that doubles as our high-performance media core (FFmpeg bindings, hardware codecs, wgpu), first-class macOS/Windows/Linux targets, and a sidecar model for bundling FFmpeg. Electron is the fallback if a hard dependency needs Node/Chromium-only APIs.
+**Why a native core (not web-only):** OpenFX hosting, VST3/AU, 32-bit-float ACEScg compositing, lock-free sample-accurate audio, zero-copy decoder→VRAM paths, and MXF/ProRes coverage are not achievable in the browser sandbox. **Why keep the web app (not native-only):** CapCut-class zero-install onboarding, collaboration/review, a continuous demo, and it *forces* the clean capability boundary that keeps both tiers honest.
+
+**Why Tauri 2 (shell) + a Rust/C++ core:** Tauri gives a thin cross-platform shell hosting the existing web UI; the heavy lifting moves into a **Rust core** (with C/C++ libraries — FFmpeg, OpenColorIO, an OFX host, HarfBuzz) exposed to the UI through the capability interfaces. Electron is the fallback only if a hard dependency needs Chromium-only APIs.
 
 **Why keep the web build:** CapCut-class onboarding, zero-install collaboration/review, and it forces a clean abstraction boundary (no backend feature may be reachable except through an interface that also has a browser implementation). The web build runs a **reduced** tier (WebCodecs export, FFmpeg.wasm fallback, no VST).
 
@@ -428,6 +433,9 @@ Legend: ✅ exists · 🟡 partial/scaffolded · ⬜ to build.
 ### UI/UX & extensibility
 ✅ Inspector, context menu, shortcuts, toasts, status bar, error boundary · ⬜ dockable panels/workspaces, customizable keymaps + editor presets, command palette, accessibility pass, i18n, plugin SDK, scripting/macros, collaboration.
 
+### Native pro tier (track N — desktop only, §18b)
+⬜ **OpenFX (OFX) host** (BorisFX/Sapphire), **VST3/AU host**, **OpenTimelineIO as the native schema**, **ACEScg 32-bit-float** compositing, **Vulkan/Metal/DX12** HAL, **tetrahedral 65³ 3D-LUT**, **FreeType/HarfBuzz** shaping, **MXF** + ProRes/DNx coverage, **NVDEC/QuickSync/VideoToolbox** decode + **NVENC/QSV/Apple** encode, **lock-free** sample-accurate audio, **zero-copy** decoder→VRAM, **SQLite** asset index + transactional state log, **MSI/DMG/AppImage/Flatpak** + **delta** auto-update.
+
 ---
 
 ## 18. Phased development roadmap
@@ -502,6 +510,28 @@ Perf passes to all targets; memory/VRAM budgets; visual-regression + integration
 
 ---
 
+## 18b. Native core track (C++/Rust pro engine) — the hybrid's second rail
+
+Per the §3 **hybrid decision**, the desktop pro tier is a native core developed *in parallel* with the web track, behind the same capability interfaces (so the web app keeps shipping). These phases (**N1–N11**) are a direct superset of the native-C++ roadmap; each native deliverable that the browser cannot reach lives here. The web track (Phases 0–11) and the native track (N1–N11) meet at the capability boundary: a feature ships web-first when possible and is *promoted* to the native core when it needs hardware/codec/plugin access.
+
+| Native phase | Focus & deliverables | Verification gate |
+|---|---|---|
+| **N1 Foundation & shared core** | Cross-platform build (Cargo workspace + **CMake** for C/C++ deps; Win/macOS/Linux); immutable project-state tree with **transactional logging**; cross-platform **thread pools + lock-free queues**; **SQLite** asset index. | High-stress test: state integrity over **1,000,000 concurrent updates** across threads. |
+| **N2 Timeline core** | **Integer-tick** time model; virtual non-destructive sequence graph (unlimited tracks/nesting); frame-accurate ripple/roll/slip/slide/split/trim; **OpenTimelineIO as the native in-memory schema**; diff-based transactional undo/redo (mirrors the TS patch engine). | Automation: sample-accurate positioning/alignment across complex edits. |
+| **N3 Media framework & HW decode** | **FFmpeg** demux (`.mp4/.mov/.mkv/.mxf`); HW decode **NVDEC / QuickSync / VideoToolbox**; background **proxy** transcode pipeline. | 4K **H.265 10-bit @ 60 fps** sustained decode. |
+| **N4 GPU render & ACES** | Graphics **HAL over Vulkan / Metal / DX12** (wgpu where it suffices, native where it doesn't); **ACEScg, 32-bit float (RGBA32F)** working space; real-time **DAG** node evaluator. | Zero clipping/banding across log profiles + HDR test patterns. |
+| **N5 VFX & color** | Lift/Gamma/Gain, HSL curves, custom shaders; **tetrahedral 3D LUT** (`.cube`, up to **65³**); bezier masks + feather + tracker bindings + blend; **OpenFX (OFX) host**. | Industry OFX plugins (BorisFX/Sapphire) load + render correctly. |
+| **N6 Audio mixer & VST** | Sample-accurate mix on **lock-free ring buffers**; 4-band parametric EQ, multiband compression, automation; **sidechain ducking**; **VST3 + AU** host. | Low-latency render, no under-runs/pops under heavy multitrack load. |
+| **N7 Text & keyframes** | **FreeType + HarfBuzz** vector typography; temporal-bezier keyframe engine; physics (spring/elastic/bounce). | Interpolation matches predefined spatial paths + acceleration curves. |
+| **N8 On-device AI** | **ONNX Runtime / TensorRT / CoreML**; local **Whisper**; **YOLO** smart-reframe; neural vocal isolation + frame-interpolation slow-mo. | Offline transcription **WER < 5%**, no network. |
+| **N9 Real-time perf & cache** | Multi-tier render cache → fast uncompressed intermediates; **zero-copy** decoder→VRAM frame sharing; idle-cycle background render. | 5-layer 4K timeline real-time scrub, zero dropped frames. |
+| **N10 Validation & compliance** | 48-hour automated UI soak; **Valgrind + AddressSanitizer** leak/corruption profiling; OTIO export/import portability vs major editors. | Zero leaks/corruptions/crashes on Win/macOS/Linux. |
+| **N11 Deployment & updates** | HW export **NVENC / QuickSync / Apple Media Engine**; packages **MSI / DMG / AppImage / Flatpak**; signed auto-update with **delta patching**. | CI builds, signs, and deploys delta patches on all 3 OSes. |
+
+**Track interplay:** N1–N2 reuse the *concepts* proven on the web track (the merged patch/command history, the capability registry). N3/N4 are the native muscle the browser lacks and are the highest-value desktop differentiators. The web track's Phase 2 (WebGPU) and N4 (native HAL) **share WGSL/shader logic and the OCIO config** so looks match across tiers. OFX (N5), VST/AU (N6), FreeType/HarfBuzz (N7), lock-free audio (N6), and zero-copy VRAM (N9) are **native-exclusive** — the web build degrades gracefully (hides those slots) per the capability rule.
+
+---
+
 ## 19. Testing, QA & release engineering
 
 - **Unit:** edit engine (timeline ops, keyframe solver, command/inverse-patch), parsers (LUT, OTIO), color math, audio DSP — extend the existing Vitest suites.
@@ -509,8 +539,8 @@ Perf passes to all targets; memory/VRAM budgets; visual-regression + integration
 - **Visual regression:** golden-frame comparisons of the render graph (per effect/transition) with perceptual diff tolerances; HDR/color-accuracy checks.
 - **Performance:** automated scrub-fps, export-rate, open-time, and memory benchmarks gated in CI.
 - **E2E:** Playwright (web) + native UI automation (desktop) for critical paths.
-- **Soak/fuzz:** long edit sessions, malformed media, huge projects, undo/redo stress.
-- **Release:** semantic versioning, signed + notarized installers (macOS notarization, Windows code-signing), auto-update, opt-in crash/telemetry, staged rollout, reproducible builds.
+- **Soak/fuzz:** long edit sessions, malformed media, huge projects, undo/redo stress. **Native gates (track N):** 1,000,000-concurrent-update state-integrity test (N1), 48-hour UI soak (N10), **Valgrind + AddressSanitizer** leak/corruption profiling (N10), offline-transcription WER < 5% (N8).
+- **Release:** semantic versioning, signed + notarized installers (macOS notarization, Windows code-signing), MSI/DMG/AppImage/Flatpak, auto-update with **delta patching**, opt-in crash/telemetry, staged rollout, reproducible builds.
 
 ---
 
@@ -523,10 +553,13 @@ Perf passes to all targets; memory/VRAM budgets; visual-regression + integration
 | Scope explosion / never shipping | Phases are independently shippable; each has exit criteria; keep web build as a continuous demo. |
 | Color accuracy regressions | Golden-frame + scope-based CI; OCIO/ACES configs reviewed. |
 | Two backends drift | The capability-interface rule + shared WGSL + shared edit engine keep web/native in lockstep; CI builds both. |
+| **Hybrid two-track cost** | Web (0–11) and native (N1–N11) double the surface. Mitigation: features ship web-first and are *promoted* to native only when they need it; the capability boundary forces parity; one shared edit-engine/history concept across both. |
+| **Native dependency complexity** (FFmpeg, OFX SDK, OCIO, HarfBuzz, VST/AU SDKs) | Vendored via CMake/Cargo, version-pinned, behind capability interfaces; each wrapped with its own integration test so a bad upgrade fails CI, not users. |
 | AI cost/privacy | On-device first; cloud opt-in with explicit consent + watermarking for synthetic voice/media. |
 | Large-project memory | Budgeted caches, proxies, virtualization, content-addressed dedupe. |
 
-**Open questions to resolve before Phase 1:** Tauri vs Electron final call (recommend Tauri); how much engine to push into Rust vs keep in TS (recommend: edit engine stays TS, media/DSP/optical-flow go Rust); OCIO config source; minimum supported GPU/OS matrix; collaboration transport (CRDT lib choice).
+**Resolved:** stack direction = **hybrid** (ship web + build native core, §3); shell = **Tauri 2**; engine split = TS edit-engine + Rust/C++ media-DSP-render core.
+**Open questions before track-N kickoff:** OCIO/ACES config source; OFX host library choice; minimum GPU/OS matrix; native↔TS bridge (Tauri commands vs FFI vs shared-memory) for frame handoff; CRDT lib for collaboration.
 
 ---
 
@@ -550,7 +583,10 @@ cinecutpro/
 │   ├── ui/                       # React components: panels, timeline, inspector, viewers, docking
 │   ├── plugin-sdk/               # plugin host, manifest, capability API, dev harness
 │   └── shared/                   # types, math, color, timecode, units
-├── native/                       # Rust crates: media-core (ffmpeg), gpu (wgpu), dsp, vst-host, ai-rt
+├── native/                       # Track-N pro core (Cargo workspace + CMake for C/C++ deps):
+│                                  #   media-core (FFmpeg, NVDEC/QSV/VideoToolbox), gpu (wgpu + Vulkan/Metal/DX12 HAL),
+│                                  #   color (OpenColorIO/ACES), ofx-host, vst-au-host, text (FreeType/HarfBuzz),
+│                                  #   dsp (lock-free audio), ai-rt (ONNX/TensorRT/CoreML), state (SQLite + txn log)
 ├── docs/                         # architecture, SDK, user guide, this plan
 ├── tests/                        # integration, visual-regression goldens, perf harness, e2e
 └── README.md  IMPLEMENTATION_PLAN.md

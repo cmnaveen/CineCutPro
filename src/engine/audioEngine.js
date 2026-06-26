@@ -75,7 +75,7 @@ class AudioEngine {
       // through default output — but un-muting is required so MESN sees data.
       element.muted = false;
       this.voices.set(id, { source, gain, pan, element });
-    } catch (e) {
+    } catch (_e) {
       // A given element can only be wrapped once. Subsequent calls will throw.
       // React strict-mode double-mount can hit this — silently keep the first.
     }

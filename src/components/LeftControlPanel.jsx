@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import { useEditor } from '../state/EditorContext.jsx';
 import { Icon } from './icons/IconSet.jsx';
 import { formatHMS } from '../engine/timecode.js';
@@ -464,7 +464,7 @@ function TemplatesTabContent({ state, dispatch, query }) {
     // Simulate template injection by placing standard media/titles
     const trackVideo = state.tracks.find(t => t.kind === 'video')?.id || 'trk_4';
     const trackTitle = state.tracks.find(t => t.kind === 'title')?.id || 'trk_1';
-    const trackAudio = state.tracks.find(t => t.kind === 'audio')?.id || 'trk_5';
+    const _trackAudio = state.tracks.find(t => t.kind === 'audio')?.id || 'trk_5';
 
     // Clear existing clips if any, then insert mock template content
     dispatch({ type: 'select/clips', ids: [] });

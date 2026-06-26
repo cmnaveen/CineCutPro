@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useEditor } from '../state/EditorContext.jsx';
 import { Icon } from './icons/IconSet.jsx';
 import { formatTC } from '../engine/timecode.js';
@@ -65,7 +65,7 @@ export function ProgramMonitor() {
       masterVolume: state.master.volume,
       playing: state.playing
     });
-  }, [state.clips, state.tracks, state.playhead, state.playing, state.master.volume]);
+  }, [state]);
 
   // Maintain a pool of off-DOM video/image elements that the renderer samples.
   // We register them with mediaRenderer when they enter the bin and tear down

@@ -1,4 +1,3 @@
-import React from 'react';
 
 /**
  * Animated empty-state shown over the Program monitor when no clips exist.

@@ -16,7 +16,7 @@ const uid = (prefix = 'id') =>
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
-const snapValue = (t, snap, pps) => {
+const snapValue = (t, snap, _pps) => {
   if (!snap) return t;
   // Snap to 1 frame
   const frame = 1 / FPS;
@@ -26,8 +26,6 @@ const snapValue = (t, snap, pps) => {
 // ---------- Collision helpers ----------
 const overlaps = (a, b) =>
   a.trackId === b.trackId && a.id !== b.id && a.start < b.end && b.start < a.end;
-
-const isOverlapping = (clips, clip) => clips.some((c) => overlaps(c, clip));
 
 const tryPlaceClip = (clips, target) => {
   // Sweep forward until the clip fits without collision.

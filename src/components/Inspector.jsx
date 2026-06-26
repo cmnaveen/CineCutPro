@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useEditor } from '../state/EditorContext.jsx';
 import { Icon } from './icons/IconSet.jsx';
 import { TITLE_PRESETS } from '../engine/titleCompositor.js';
@@ -142,7 +142,7 @@ function Slider({ label, min, max, step, value, suffix = '', onChange, format })
 }
 
 // 1. BASIC PANEL (Transform, Text editing, Color Filters)
-function BasicPanel({ clip, state, dispatch }) {
+function BasicPanel({ clip, _state, dispatch }) {
   const isText = clip.kind === 'title' || clip.kind === 'subtitle';
   const t = clip.transform;
   const updTransform = (patch) => dispatch({ type: 'clip/updateTransform', id: clip.id, patch });
@@ -457,7 +457,7 @@ function BasicPanel({ clip, state, dispatch }) {
 }
 
 // 2. BACKGROUND PANEL
-function BackgroundPanel({ clip, dispatch, state }) {
+function BackgroundPanel({ _clip, dispatch, state }) {
   const p = state.project;
   const bg = p.background ?? { type: 'color', color: '#05080f', blur: 15 };
 
@@ -976,7 +976,7 @@ function TransitionEdit({ side, clip, dispatch }) {
   );
 }
 
-function EffectsPanel({ clip, state, dispatch }) {
+function EffectsPanel({ clip, _state, dispatch }) {
   const effects = clip.effects ?? [];
 
   const handleToggle = (fxId, val) => {

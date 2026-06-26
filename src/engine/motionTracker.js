@@ -64,9 +64,8 @@ export async function trackFeature(videoElement, initialBox, options = {}) {
   await seekTo(videoElement, startTime);
   ctx.drawImage(videoElement, 0, 0, sampleW, sampleH);
   
-  let frameData;
   try {
-    frameData = ctx.getImageData(0, 0, sampleW, sampleH);
+    ctx.getImageData(0, 0, sampleW, sampleH);
   } catch (_) {
     throw new Error('Tainted canvas: cannot track motion on cross-origin video.');
   }

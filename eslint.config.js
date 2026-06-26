@@ -29,11 +29,22 @@ export default [
     settings: { react: { version: 'detect' } },
     rules: {
       'react/react-in-jsx-scope': 'off',
+      // Automatic JSX runtime: React need not be in scope, but JSX-referenced
+      // identifiers (<Header/> etc.) MUST count as "used" or no-unused-vars
+      // produces false positives that would tempt removing live imports.
+      'react/jsx-uses-react': 'off',
+      'react/jsx-uses-vars': 'error',
       'react/prop-types': 'off',
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
       'no-undef': 'error',
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }]
+      // Empty `catch (_) {}` is the project's deliberate graceful-degradation
+      // idiom (storage/canvas/audio ops that may fail and should be ignored).
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      'no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }
+      ]
     }
   },
   {

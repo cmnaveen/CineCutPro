@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useEditor } from '../state/EditorContext.jsx';
 import { Icon } from './icons/IconSet.jsx';
 import { formatTC } from '../engine/timecode.js';
@@ -212,7 +212,7 @@ export function SourceMonitor() {
   );
 }
 
-function useTapeScrub({ duration, playhead, onScrub }) {
+function useTapeScrub({ duration, playhead: _playhead, onScrub }) {
   const containerRef = useRef(null);
 
   const onMouseDown = useCallback(

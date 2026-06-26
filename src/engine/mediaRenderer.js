@@ -380,7 +380,7 @@ class MediaRenderer {
           try {
             const processedCanvas = webglRenderer.process(finalSource, dw, dh, webglParams);
             scratch.ctx.drawImage(processedCanvas, (w - dw) / 2, (h - dh) / 2);
-          } catch (e) {
+          } catch (_e) {
             scratch.ctx.drawImage(el, cx, cy, cw, ch, (w - dw) / 2, (h - dh) / 2, dw, dh);
           }
         }
@@ -415,7 +415,7 @@ class MediaRenderer {
           try {
             const processedCanvas = webglRenderer.process(finalSource, dw, dh, webglParams);
             scratch.ctx.drawImage(processedCanvas, (w - dw) / 2, (h - dh) / 2);
-          } catch (e) {
+          } catch (_e) {
             scratch.ctx.drawImage(el, cx, cy, cw, ch, (w - dw) / 2, (h - dh) / 2, dw, dh);
             const ck = clip.filters?.chromaKey;
             if (ck?.enabled) applyChromaKey(scratch.ctx, w, h, ck);
@@ -428,7 +428,6 @@ class MediaRenderer {
 
       const vig = clip.filters?.vignette ?? 0;
       if (vig > 0.001) {
-        const webglParams = this._getWebGLParams(clip);
         if (!webglRenderer.initialized) {
           scratch.ctx.filter = 'none';
           const g = scratch.ctx.createRadialGradient(w / 2, h / 2, w * 0.25, w / 2, h / 2, w * 0.62);

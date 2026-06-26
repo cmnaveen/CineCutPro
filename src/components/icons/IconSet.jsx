@@ -1,4 +1,3 @@
-import React from 'react';
 
 const wrap = (children) => (props) => {
   const { size = 18, ...rest } = props ?? {};

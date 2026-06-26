@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useEditor } from '../state/EditorContext.jsx';
 import { titleBounds } from '../engine/titleCompositor.js';
 
@@ -83,7 +83,7 @@ export function CanvasOverlay() {
   const projectH = state.project.height || 1080;
 
   const startScaleDrag = useCallback(
-    (e, anchor) => {
+    (e, _anchor) => {
       if (!active || !contentRect) return;
       e.preventDefault();
       e.stopPropagation();
@@ -112,7 +112,7 @@ export function CanvasOverlay() {
       window.addEventListener('mousemove', move);
       window.addEventListener('mouseup', up);
     },
-    [active, contentRect, dispatch]
+    [active, contentRect, dispatch, projectH, projectW]
   );
 
   const startRotateDrag = useCallback(
@@ -143,7 +143,7 @@ export function CanvasOverlay() {
       window.addEventListener('mousemove', move);
       window.addEventListener('mouseup', up);
     },
-    [active, contentRect, dispatch]
+    [active, contentRect, dispatch, projectH, projectW]
   );
 
   if (!contentRect || !active) return null;

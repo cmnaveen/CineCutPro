@@ -206,7 +206,6 @@ const motions = {
 
   flip: (p) => {
     // Card flip effect (via scale.x simulating 3D rotation)
-    const e = easeOutCubic(p);
     const scaleX = Math.abs(Math.cos((1 - p) * Math.PI));
     return {
       alpha: p < 0.5 ? p * 2 : 1,

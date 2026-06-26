@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useEditor } from '../state/EditorContext.jsx';
 import { Icon } from './icons/IconSet.jsx';
 import { formatTC } from '../engine/timecode.js';
-import { TRACK_KINDS, FPS } from '../state/initialState.js';
+import { TRACK_KINDS } from '../state/initialState.js';
 import { TITLE_PRESETS } from '../engine/titleCompositor.js';
 
 const SNAP_PX = 8;       // proximity for magnetic snap (in pixels)
@@ -520,7 +520,7 @@ function TrackRow({ track, pps, width, state, dispatch, dragMode, setDragMode, i
 
 /* ─────────────────────────── Clip block ─────────────────────────── */
 
-function ClipBlock({ clip, track, state, dispatch, pps, dragMode, setDragMode, setActiveSnapTime }) {
+function ClipBlock({ clip, track, state, dispatch, pps, dragMode: _dragMode, setDragMode, setActiveSnapTime }) {
   const selected = state.selectedClipIds.includes(clip.id);
   const media = state.media.find((m) => m.id === clip.mediaId);
 
@@ -596,7 +596,7 @@ function ClipBlock({ clip, track, state, dispatch, pps, dragMode, setDragMode, s
       window.addEventListener('mousemove', onMove);
       window.addEventListener('mouseup', onUp);
     },
-    [clip, dispatch, pps, selected, state.selectedClipIds, track.locked, setDragMode, snap]
+    [clip, dispatch, pps, selected, state.selectedClipIds, track.locked, setDragMode, snap, setActiveSnapTime]
   );
 
   const onTrim = useCallback(
@@ -620,7 +620,7 @@ function ClipBlock({ clip, track, state, dispatch, pps, dragMode, setDragMode, s
       window.addEventListener('mousemove', onMove);
       window.addEventListener('mouseup', onUp);
     },
-    [clip, dispatch, pps, track.locked, snap]
+    [clip, dispatch, pps, track.locked, snap, setActiveSnapTime]
   );
 
   const onContextMenu = useCallback(

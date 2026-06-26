@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useEditor } from '../state/EditorContext.jsx';
 import { Icon } from './icons/IconSet.jsx';
 import { mediaRenderer } from '../engine/mediaRenderer.js';
@@ -127,7 +127,7 @@ export function ExportDialog() {
         inAt,
         endAt,
         mediaRenderer,
-        (t) => {
+        (_t) => {
           drawFrame();
         }
       );

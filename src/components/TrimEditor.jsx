@@ -1,6 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useEditor } from '../state/EditorContext.jsx';
-import { Icon } from './icons/IconSet.jsx';
 import { formatTC, FPS } from '../engine/timecode.js';
 
 /**

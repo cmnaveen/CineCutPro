@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { useEditor } from '../state/EditorContext.jsx';
 import { mediaRenderer } from '../engine/mediaRenderer.js';
 import { createEffectInstance } from '../engine/effectsRegistry.js';

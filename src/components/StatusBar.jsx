@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useEditor } from '../state/EditorContext.jsx';
 import { formatTC } from '../engine/timecode.js';
 import { mediaRenderer } from '../engine/mediaRenderer.js';

@@ -1,8 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useEditor } from '../state/EditorContext.jsx';
 import { mediaRenderer } from '../engine/mediaRenderer.js';
 import { cutToAngle, alignClips } from '../engine/multicamEditor.js';
-import { Icon } from './icons/IconSet.jsx';
 
 export function MulticamViewer() {
   const { state, dispatch } = useEditor();
@@ -17,7 +16,7 @@ export function MulticamViewer() {
     if (!open) return;
 
     const unsubscribe = mediaRenderer.onTick(({ t, playing }) => {
-      for (const [mediaId, videoEl] of videoRefs.current.entries()) {
+      for (const [_mediaId, videoEl] of videoRefs.current.entries()) {
         if (!videoEl) continue;
 
         // Sync timecode
@@ -38,9 +37,7 @@ export function MulticamViewer() {
     return () => unsubscribe();
   }, [open, state.playhead]);
 
-  if (!open) return null;
-
-  const handleAngleClick = (mediaId) => {
+  const handleAngleClick = useCallback((mediaId) => {
     const nextClips = cutToAngle(state, state.playhead, mediaId);
     if (nextClips) {
       dispatch({ type: 'clip/updateAll', clips: nextClips });
@@ -48,10 +45,12 @@ export function MulticamViewer() {
     } else {
       dispatch({ type: 'toast/push', kind: 'info', message: 'No active clip on timeline to switch.' });
     }
-  };
+  }, [state, dispatch]);
 
-  // Keyboard shortcut listener (keys 1-9 to switch angles)
+  // Keyboard shortcut listener (keys 1-9 to switch angles). The effect is
+  // called unconditionally (Rules of Hooks); it no-ops while the viewer is closed.
   useEffect(() => {
+    if (!open) return undefined;
     const handleKeyDown = (e) => {
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
         return;
@@ -64,7 +63,7 @@ export function MulticamViewer() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [state, videoMedia]);
+  }, [open, state, videoMedia, handleAngleClick]);
 
   const handleSyncAll = () => {
     dispatch({ type: 'toast/push', kind: 'info', message: `Aligning angles by: ${syncMethod}...` });
@@ -73,6 +72,8 @@ export function MulticamViewer() {
     dispatch({ type: 'clip/updateAll', clips: [...otherClips, ...alignedClips] });
     dispatch({ type: 'toast/push', kind: 'success', message: 'Camera angles aligned!' });
   };
+
+  if (!open) return null;
 
   return (
     <div className="cc-multicam-viewer cc-panel-premium">

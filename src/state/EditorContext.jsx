@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
 import { initialState, FPS } from './initialState.js';
 import { reducer as baseReducer, HISTORY_ACTIONS } from './editorReducer.js';
 import { createHistoryController } from './historyController.js';
@@ -110,8 +110,8 @@ export function EditorProvider({ children }) {
       undoLabel: historyRef.current.undoLabel(),
       redoLabel: historyRef.current.redoLabel()
     }),
-    // historyDepth is intentionally not tracked precisely: it is informational.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // historyDepth/labels read from a ref (non-reactive); they refresh on the
+    // next state-driven recompute, which is fine for informational display.
     [state, dispatch, undo, redo, selectedClips, duration]
   );
 
